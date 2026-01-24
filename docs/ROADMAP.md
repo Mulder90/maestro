@@ -7,28 +7,34 @@ BurstSmith is a functional HTTP load testing tool with:
 - YAML-configured workflows
 - Load profiles (ramp, steady, burst patterns)
 - Rate limiting
-- Basic metrics (success rate, avg duration)
+- Percentile metrics (p50, p90, p95, p99)
+- JSON output format
+- Thresholds with CI/CD exit codes
+- Progress indicator
+- Graceful shutdown
+- Local test server for offline testing
+- Verbose mode for request/response debugging
 
 ## Production Readiness Gaps
 
 ### 1. Metrics & Reporting
 
-**Current**: Only prints summary to console after test completes.
+**Current**: Percentiles, JSON output, real-time progress indicator.
 
 **Needed**:
-- [ ] Percentiles (p50, p90, p95, p99)
+- [x] Percentiles (p50, p90, p95, p99)
 - [ ] Histogram of response times
-- [ ] Real-time metrics during test
-- [ ] Export formats (JSON, CSV, HTML report)
+- [x] Real-time metrics during test (progress indicator)
+- [x] Export formats (JSON) - CSV, HTML still needed
 - [ ] Integration with observability tools (Prometheus, InfluxDB, Grafana)
 
 ### 2. Assertions & Thresholds
 
-**Current**: No pass/fail criteria.
+**Current**: Duration and error rate thresholds with exit codes.
 
 **Needed**:
-- [ ] Threshold definitions (e.g., `p99 < 500ms`, `error_rate < 1%`)
-- [ ] Exit code based on thresholds (for CI/CD)
+- [x] Threshold definitions (e.g., `p99 < 500ms`, `error_rate < 1%`)
+- [x] Exit code based on thresholds (for CI/CD)
 - [ ] Per-step assertions
 - [ ] Response body validation
 
@@ -54,12 +60,12 @@ BurstSmith is a functional HTTP load testing tool with:
 
 ### 5. Operational
 
-**Current**: Single process, local execution.
+**Current**: Progress indicator, graceful shutdown, local test server, verbose mode.
 
 **Needed**:
-- [ ] Graceful shutdown with partial results
-- [ ] Progress bar / live dashboard
-- [ ] Debug mode with request/response logging
+- [x] Graceful shutdown with partial results
+- [x] Progress bar / live dashboard
+- [x] Debug mode with request/response logging (`--verbose` flag)
 - [ ] Distributed execution (multiple machines)
 
 ## Protocol Support
@@ -179,20 +185,21 @@ workflow:
 ### Phase 1: Production-Ready HTTP (v1.0)
 Focus: Make HTTP testing production-ready
 
-1. **Metrics enhancement**
-   - Add percentile calculations (p50, p90, p95, p99)
-   - JSON output format
-   - Exit codes based on thresholds
+1. **Metrics enhancement** ✅
+   - [x] Add percentile calculations (p50, p90, p95, p99)
+   - [x] JSON output format
+   - [x] Exit codes based on thresholds
 
-2. **Basic dynamism**
-   - Variable extraction (JSONPath)
-   - Variable substitution in requests
-   - Environment variable support
+2. **Basic dynamism** ❌ (not started)
+   - [ ] Variable extraction (JSONPath)
+   - [ ] Variable substitution in requests
+   - [ ] Environment variable support
 
-3. **Operational**
-   - Progress indicator
-   - Debug/verbose mode
-   - Graceful shutdown
+3. **Operational** ✅
+   - [x] Progress indicator
+   - [x] Debug/verbose mode (`--verbose` flag)
+   - [x] Graceful shutdown
+   - [x] Local test server (bonus)
 
 ### Phase 2: Extensibility (v1.5)
 Focus: Prepare architecture for multi-protocol

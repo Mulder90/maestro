@@ -26,6 +26,7 @@ func main() {
 	duration := flag.Duration("duration", 10*time.Second, "test duration")
 	output := flag.String("output", "text", "output format: text, json")
 	quiet := flag.Bool("quiet", false, "suppress progress output during test")
+	verbose := flag.Bool("verbose", false, "enable debug output (request/response logging)")
 	flag.Parse()
 
 	if *configPath == "" {
@@ -49,12 +50,19 @@ func main() {
 	collector := burstsmith.NewCollector()
 	coordinator := burstsmith.NewCoordinator(collector)
 
+	// Create debug logger if verbose mode enabled
+	var debugLogger *burstsmith.DebugLogger
+	if *verbose {
+		debugLogger = burstsmith.NewDebugLogger(os.Stderr)
+	}
+
 	// Create HTTP workflow with shared client
 	workflow := &burstsmith.HTTPWorkflow{
 		Config: cfg.Workflow,
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		Debug: debugLogger,
 	}
 
 	// Set up graceful shutdown
