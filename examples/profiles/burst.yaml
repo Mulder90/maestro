@@ -1,0 +1,23 @@
+workflow:
+  name: "Burst Pattern Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://httpbin.org/status/200"
+
+loadProfile:
+  phases:
+    - name: "baseline"
+      duration: 20s
+      actors: 10
+      rps: 50
+
+    - name: "burst"
+      duration: 10s
+      actors: 100
+      rps: 500
+
+    - name: "recovery"
+      duration: 30s
+      actors: 10
+      rps: 50

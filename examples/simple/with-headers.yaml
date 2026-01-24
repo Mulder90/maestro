@@ -1,0 +1,10 @@
+workflow:
+  name: "Custom Headers"
+  steps:
+    - name: "headers_test"
+      method: GET
+      url: "https://httpbin.org/headers"
+      headers:
+        X-Custom-Header: "custom-value"
+        X-Request-ID: "12345"
+        Authorization: "Bearer test-token"

@@ -1,0 +1,6 @@
+workflow:
+  name: "Rapid Fire"
+  steps:
+    - name: "ping"
+      method: GET
+      url: "https://httpbin.org/status/200"

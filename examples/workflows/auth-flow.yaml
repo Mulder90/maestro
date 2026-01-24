@@ -1,0 +1,30 @@
+workflow:
+  name: "Auth Flow"
+  steps:
+    - name: "login"
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Content-Type: "application/json"
+      body: '{"username": "testuser", "password": "testpass"}'
+
+    - name: "get_profile"
+      method: GET
+      url: "https://httpbin.org/get"
+      headers:
+        Authorization: "Bearer mock-jwt-token"
+
+    - name: "update_profile"
+      method: PUT
+      url: "https://httpbin.org/put"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer mock-jwt-token"
+      body: '{"email": "updated@example.com"}'
+
+    - name: "logout"
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Authorization: "Bearer mock-jwt-token"
+      body: '{}'

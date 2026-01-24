@@ -1,0 +1,34 @@
+workflow:
+  name: "Large Payload Stress Test"
+  steps:
+    - name: "large_post"
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": "stress-test-001",
+          "timestamp": "2024-01-01T00:00:00Z",
+          "data": {
+            "users": [
+              {"id": 1, "name": "Alice", "email": "alice@example.com", "role": "admin"},
+              {"id": 2, "name": "Bob", "email": "bob@example.com", "role": "user"},
+              {"id": 3, "name": "Charlie", "email": "charlie@example.com", "role": "user"},
+              {"id": 4, "name": "Diana", "email": "diana@example.com", "role": "moderator"},
+              {"id": 5, "name": "Eve", "email": "eve@example.com", "role": "user"}
+            ],
+            "metadata": {
+              "version": "1.0.0",
+              "source": "burstsmith-stress-test",
+              "tags": ["load-test", "performance", "stress", "large-payload"],
+              "config": {
+                "retries": 3,
+                "timeout": 30000,
+                "compression": false,
+                "validation": true
+              }
+            },
+            "payload": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+          }
+        }

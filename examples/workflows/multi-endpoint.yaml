@@ -1,0 +1,25 @@
+workflow:
+  name: "Multi-Endpoint Test"
+  steps:
+    - name: "get_ip"
+      method: GET
+      url: "https://httpbin.org/ip"
+
+    - name: "get_user_agent"
+      method: GET
+      url: "https://httpbin.org/user-agent"
+
+    - name: "get_headers"
+      method: GET
+      url: "https://httpbin.org/headers"
+
+    - name: "post_anything"
+      method: POST
+      url: "https://httpbin.org/anything"
+      headers:
+        Content-Type: "application/json"
+      body: '{"message": "hello from burstsmith"}'
+
+    - name: "get_uuid"
+      method: GET
+      url: "https://httpbin.org/uuid"

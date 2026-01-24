@@ -1,0 +1,22 @@
+workflow:
+  name: "Ramp Up/Down Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://httpbin.org/status/200"
+
+loadProfile:
+  phases:
+    - name: "ramp_up"
+      duration: 30s
+      startActors: 1
+      endActors: 50
+
+    - name: "steady"
+      duration: 1m
+      actors: 50
+
+    - name: "ramp_down"
+      duration: 15s
+      startActors: 50
+      endActors: 0

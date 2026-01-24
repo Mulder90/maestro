@@ -1,0 +1,6 @@
+workflow:
+  name: "Health Check"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://httpbin.org/status/200"

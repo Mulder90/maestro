@@ -1,0 +1,9 @@
+workflow:
+  name: "POST JSON"
+  steps:
+    - name: "create"
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Content-Type: "application/json"
+      body: '{"name": "test", "value": 123}'

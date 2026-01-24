@@ -1,0 +1,23 @@
+workflow:
+  name: "Steady Rate Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://httpbin.org/status/200"
+
+loadProfile:
+  phases:
+    - name: "warmup"
+      duration: 10s
+      actors: 10
+      rps: 20
+
+    - name: "steady"
+      duration: 1m
+      actors: 20
+      rps: 100
+
+    - name: "cooldown"
+      duration: 10s
+      actors: 5
+      rps: 10

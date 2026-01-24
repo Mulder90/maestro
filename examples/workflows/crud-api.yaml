@@ -1,0 +1,24 @@
+workflow:
+  name: "CRUD API Flow"
+  steps:
+    - name: "create_resource"
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Content-Type: "application/json"
+      body: '{"id": 1, "name": "test-resource"}'
+
+    - name: "read_resource"
+      method: GET
+      url: "https://httpbin.org/get"
+
+    - name: "update_resource"
+      method: PUT
+      url: "https://httpbin.org/put"
+      headers:
+        Content-Type: "application/json"
+      body: '{"id": 1, "name": "updated-resource"}'
+
+    - name: "delete_resource"
+      method: DELETE
+      url: "https://httpbin.org/delete"
