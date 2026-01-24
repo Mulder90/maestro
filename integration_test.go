@@ -186,7 +186,7 @@ loadProfile:
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coordinator.RunWithProfile(ctx, cfg.LoadProfile, workflow, nil)
+	coordinator.RunWithProfile(ctx, cfg.LoadProfile, workflow, nil, nil)
 	coordinator.Wait()
 	collector.Close()
 
@@ -248,7 +248,7 @@ loadProfile:
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coordinator.RunWithProfile(ctx, cfg.LoadProfile, workflow, rateLimiter)
+	coordinator.RunWithProfile(ctx, cfg.LoadProfile, workflow, rateLimiter, nil)
 	coordinator.Wait()
 	collector.Close()
 

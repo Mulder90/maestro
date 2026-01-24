@@ -1,7 +1,9 @@
 package burstsmith
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -177,7 +179,7 @@ func TestCoordinator_RunWithProfile_RampUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coord.RunWithProfile(ctx, profile, workflow, nil)
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
 	collector.Close()
 
@@ -207,7 +209,7 @@ func TestCoordinator_RunWithProfile_SteadyState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coord.RunWithProfile(ctx, profile, workflow, nil)
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
 	collector.Close()
 
@@ -238,7 +240,7 @@ func TestCoordinator_RunWithProfile_MultiplePhases(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coord.RunWithProfile(ctx, profile, workflow, nil)
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
 	collector.Close()
 
@@ -271,7 +273,7 @@ func TestCoordinator_RunWithProfile_WithRateLimiter(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	coord.RunWithProfile(ctx, profile, workflow, rateLimiter)
+	coord.RunWithProfile(ctx, profile, workflow, rateLimiter, nil)
 	coord.Wait()
 	elapsed := time.Since(start)
 	collector.Close()
@@ -324,12 +326,53 @@ func TestCoordinator_RunWithProfile_RampDown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	coord.RunWithProfile(ctx, profile, workflow, nil)
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
 	collector.Close()
 
 	// After ramp down completes, should have 0 active actors
 	if coord.ActiveActors() != 0 {
 		t.Errorf("expected 0 active actors after ramp down, got %d", coord.ActiveActors())
+	}
+}
+
+func TestCoordinator_RunWithProfile_PhaseAnnouncementsUseProgress(t *testing.T) {
+	collector := NewCollector()
+	coord := NewCoordinator(collector)
+
+	var buf bytes.Buffer
+	progress := NewProgress(collector, false)
+	progress.SetOutput(&buf)
+
+	workflow := &mockWorkflow{delay: 5 * time.Millisecond}
+
+	// Phases must be longer than 100ms (coordinator tick interval) to be detected
+	profile := &LoadProfile{
+		Phases: []Phase{
+			{Name: "phase1", Duration: 150 * time.Millisecond, Actors: 2},
+			{Name: "phase2", Duration: 150 * time.Millisecond, Actors: 3},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	coord.RunWithProfile(ctx, profile, workflow, nil, progress)
+	coord.Wait()
+	collector.Close()
+
+	output := buf.String()
+
+	// Phase announcements should be in the output
+	if !strings.Contains(output, "phase1") {
+		t.Errorf("expected phase1 announcement in output, got: %q", output)
+	}
+	if !strings.Contains(output, "phase2") {
+		t.Errorf("expected phase2 announcement in output, got: %q", output)
+	}
+
+	// Output should contain clear escape sequence before each phase announcement
+	if !strings.Contains(output, "\r\033[K") {
+		t.Error("expected line clear escape sequence in output")
 	}
 }

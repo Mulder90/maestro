@@ -100,10 +100,20 @@ func (c *DefaultCoordinator) stopActors(n int) {
 }
 
 // RunWithProfile executes a workflow according to a load profile.
-func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadProfile, workflow Workflow, rateLimiter *RateLimiter) {
+// If progress is provided, phase announcements are printed through it to coordinate with progress display.
+func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadProfile, workflow Workflow, rateLimiter *RateLimiter, progress *Progress) {
 	pm := NewPhaseManager(profile.Phases)
 
-	fmt.Printf("Starting load profile with %d phases, total duration: %v\n",
+	// Helper function to print messages
+	printMsg := func(format string, args ...interface{}) {
+		if progress != nil {
+			progress.Printf(format, args...)
+		} else {
+			fmt.Printf(format+"\n", args...)
+		}
+	}
+
+	printMsg("Starting load profile with %d phases, total duration: %v",
 		len(profile.Phases), profile.TotalDuration())
 
 	currentPhaseIdx := -1
@@ -127,12 +137,13 @@ func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadPr
 				currentPhaseIdx = newPhaseIdx
 				phase := pm.CurrentPhase()
 				if phase != nil {
-					fmt.Printf("Phase: %s (duration: %v, target actors: %d",
-						phase.Name, phase.Duration, pm.TargetActors())
 					if phase.RPS > 0 {
-						fmt.Printf(", rps: %d", phase.RPS)
+						printMsg("Phase: %s (duration: %v, target actors: %d, rps: %d)",
+							phase.Name, phase.Duration, pm.TargetActors(), phase.RPS)
+					} else {
+						printMsg("Phase: %s (duration: %v, target actors: %d)",
+							phase.Name, phase.Duration, pm.TargetActors())
 					}
-					fmt.Println(")")
 				}
 			}
 

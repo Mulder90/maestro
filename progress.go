@@ -2,7 +2,9 @@ package burstsmith
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -15,6 +17,8 @@ type Progress struct {
 	stopCh    chan struct{}
 	stopped   atomic.Bool
 	quiet     bool
+	output    io.Writer
+	mu        sync.Mutex
 }
 
 // NewProgress creates a new progress indicator.
@@ -24,7 +28,15 @@ func NewProgress(collector *Collector, quiet bool) *Progress {
 		collector: collector,
 		quiet:     quiet,
 		stopCh:    make(chan struct{}),
+		output:    os.Stderr,
 	}
+}
+
+// SetOutput sets the output writer for progress display.
+func (p *Progress) SetOutput(w io.Writer) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.output = w
 }
 
 // Start begins displaying progress updates every second.
@@ -60,10 +72,32 @@ func (p *Progress) Stop() {
 	close(p.stopCh)
 
 	// Clear the progress line
-	fmt.Fprint(os.Stderr, "\r\033[K")
+	p.mu.Lock()
+	fmt.Fprint(p.output, "\r\033[K")
+	p.mu.Unlock()
 }
 
-// display prints the current progress to stderr.
+// Print outputs a message, clearing the progress line first if active.
+// The message will be followed by a newline.
+func (p *Progress) Print(message string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Clear current progress line if not in quiet mode
+	if !p.quiet {
+		fmt.Fprint(p.output, "\r\033[K")
+	}
+
+	// Print the message with newline
+	fmt.Fprintln(p.output, message)
+}
+
+// Printf outputs a formatted message, clearing the progress line first if active.
+func (p *Progress) Printf(format string, args ...interface{}) {
+	p.Print(fmt.Sprintf(format, args...))
+}
+
+// display prints the current progress.
 func (p *Progress) display() {
 	p.collector.mu.Lock()
 	eventCount := len(p.collector.events)
@@ -95,8 +129,10 @@ func (p *Progress) display() {
 	progressLine := fmt.Sprintf("[%s] Requests: %d | RPS: %.1f | Errors: %d (%.1f%%)",
 		elapsedStr, eventCount, rps, failureCount, errorRate)
 
-	// Print to stderr with carriage return (overwrite previous line)
-	fmt.Fprintf(os.Stderr, "\r\033[K%s", progressLine)
+	// Print with carriage return (overwrite previous line)
+	p.mu.Lock()
+	fmt.Fprintf(p.output, "\r\033[K%s", progressLine)
+	p.mu.Unlock()
 }
 
 // formatElapsed formats duration as MM:SS.

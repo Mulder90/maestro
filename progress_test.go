@@ -1,6 +1,8 @@
 package burstsmith
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,5 +89,75 @@ func TestNewProgress_Quiet(t *testing.T) {
 
 	if !progress.quiet {
 		t.Error("quiet should be true")
+	}
+}
+
+func TestProgress_Print_ClearsLineAndPrintsMessage(t *testing.T) {
+	collector := NewCollector()
+	defer collector.Close()
+
+	var buf bytes.Buffer
+	progress := NewProgress(collector, false)
+	progress.SetOutput(&buf)
+	progress.Start()
+
+	// Give progress time to display
+	time.Sleep(50 * time.Millisecond)
+
+	// Print should clear line and print message
+	progress.Print("Phase: test (duration: 10s)")
+
+	progress.Stop()
+
+	output := buf.String()
+
+	// Should contain the escape sequence to clear line before message
+	if !strings.Contains(output, "\r\033[K") {
+		t.Error("expected output to contain line clear escape sequence")
+	}
+
+	// Should contain the message
+	if !strings.Contains(output, "Phase: test (duration: 10s)") {
+		t.Errorf("expected output to contain message, got: %q", output)
+	}
+
+	// Message should end with newline
+	if !strings.Contains(output, "Phase: test (duration: 10s)\n") {
+		t.Error("expected message to end with newline")
+	}
+}
+
+func TestProgress_Print_QuietModeStillPrints(t *testing.T) {
+	collector := NewCollector()
+	defer collector.Close()
+
+	var buf bytes.Buffer
+	progress := NewProgress(collector, true) // quiet mode
+	progress.SetOutput(&buf)
+
+	progress.Print("Phase: test")
+
+	output := buf.String()
+
+	// In quiet mode, Print should still output the message (just no progress)
+	if !strings.Contains(output, "Phase: test\n") {
+		t.Errorf("expected message in quiet mode, got: %q", output)
+	}
+}
+
+func TestProgress_Printf_FormatsAndPrints(t *testing.T) {
+	collector := NewCollector()
+	defer collector.Close()
+
+	var buf bytes.Buffer
+	progress := NewProgress(collector, false)
+	progress.SetOutput(&buf)
+
+	progress.Printf("Phase: %s (actors: %d)", "warmup", 10)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "Phase: warmup (actors: 10)\n") {
+		t.Errorf("expected formatted message, got: %q", output)
 	}
 }
