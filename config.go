@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Workflow    WorkflowConfig `yaml:"workflow"`
 	LoadProfile *LoadProfile   `yaml:"loadProfile,omitempty"`
+	Thresholds  *Thresholds    `yaml:"thresholds,omitempty"`
 }
 
 // LoadProfile defines the load pattern for a test.

@@ -1,0 +1,22 @@
+workflow:
+  name: "Threshold Test - Expected to Fail"
+  steps:
+    - name: "slow-endpoint"
+      method: GET
+      url: "https://httpbin.org/delay/1"
+
+loadProfile:
+  phases:
+    - name: "steady"
+      duration: 10s
+      actors: 3
+      rps: 5
+
+# These thresholds are set very tight so the test should fail
+# (httpbin.org/delay/1 takes ~1 second per request)
+thresholds:
+  http_req_duration:
+    p95: 100ms     # p95 must be < 100ms - will fail
+    p99: 200ms     # p99 must be < 200ms - will fail
+  http_req_failed:
+    rate: 0%       # error rate must be 0% - might fail

@@ -1,25 +1,31 @@
 package burstsmith
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"sync"
 	"time"
 )
 
 // Collector aggregates events from actors and produces a summary.
 type Collector struct {
-	events []Event
-	ch     chan Event
-	done   chan struct{}
-	mu     sync.Mutex
+	events    []Event
+	ch        chan Event
+	done      chan struct{}
+	mu        sync.Mutex
+	startTime time.Time
+	endTime   time.Time
 }
 
 // NewCollector creates a new Collector and starts its collection goroutine.
 func NewCollector() *Collector {
 	c := &Collector{
-		events: make([]Event, 0),
-		ch:     make(chan Event, 1000),
-		done:   make(chan struct{}),
+		events:    make([]Event, 0),
+		ch:        make(chan Event, 1000),
+		done:      make(chan struct{}),
+		startTime: time.Now(),
 	}
 	go c.collect()
 	return c
@@ -46,46 +52,215 @@ func (c *Collector) Report(event Event) {
 
 // Close signals the collector to stop accepting events.
 func (c *Collector) Close() {
+	c.endTime = time.Now()
 	close(c.ch)
 	<-c.done
 }
 
-// Summary computes and prints aggregated statistics.
-func (c *Collector) Summary() {
+// Compute calculates metrics from all collected events.
+func (c *Collector) Compute() *Metrics {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	m := &Metrics{
+		Steps: make(map[string]*StepMetrics),
+	}
+
 	if len(c.events) == 0 {
-		fmt.Println("No events collected")
+		return m
+	}
+
+	// Calculate test duration
+	if !c.endTime.IsZero() {
+		m.TestDuration = c.endTime.Sub(c.startTime)
+	} else {
+		m.TestDuration = time.Since(c.startTime)
+	}
+
+	// Collect all durations and per-step data
+	allDurations := make([]time.Duration, 0, len(c.events))
+	stepDurations := make(map[string][]time.Duration)
+
+	for _, e := range c.events {
+		m.TotalRequests++
+		if e.Success {
+			m.SuccessCount++
+		} else {
+			m.FailureCount++
+		}
+
+		allDurations = append(allDurations, e.Duration)
+
+		// Initialize step metrics if needed
+		if _, exists := m.Steps[e.Step]; !exists {
+			m.Steps[e.Step] = &StepMetrics{}
+			stepDurations[e.Step] = make([]time.Duration, 0)
+		}
+
+		step := m.Steps[e.Step]
+		step.Count++
+		if e.Success {
+			step.Success++
+		} else {
+			step.Failed++
+		}
+		stepDurations[e.Step] = append(stepDurations[e.Step], e.Duration)
+	}
+
+	// Calculate success rate
+	if m.TotalRequests > 0 {
+		m.SuccessRate = float64(m.SuccessCount) / float64(m.TotalRequests) * 100
+	}
+
+	// Calculate requests per second
+	if m.TestDuration > 0 {
+		m.RequestsPerSec = float64(m.TotalRequests) / m.TestDuration.Seconds()
+	}
+
+	// Compute overall duration metrics
+	m.Duration = ComputeDurationMetrics(allDurations)
+
+	// Compute per-step duration metrics
+	for step, durations := range stepDurations {
+		m.Steps[step].Duration = ComputeDurationMetrics(durations)
+	}
+
+	return m
+}
+
+// Summary computes and prints aggregated statistics (legacy method).
+func (c *Collector) Summary() {
+	m := c.Compute()
+	c.PrintText(os.Stdout, m, nil)
+}
+
+// PrintText outputs metrics in human-readable format.
+func (c *Collector) PrintText(w io.Writer, m *Metrics, thresholds *ThresholdResults) {
+	if m.TotalRequests == 0 {
+		fmt.Fprintln(w, "No events collected")
 		return
 	}
 
-	total := len(c.events)
-	successCount := 0
-	var totalDuration time.Duration
-	stepCounts := make(map[string]int)
-	stepDurations := make(map[string]time.Duration)
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "BurstSmith - Load Test Results")
+	fmt.Fprintln(w, "==============================")
+	fmt.Fprintln(w, "")
+	fmt.Fprintf(w, "Duration:       %v\n", m.TestDuration.Round(time.Millisecond))
+	fmt.Fprintf(w, "Total Requests: %s\n", formatNumber(m.TotalRequests))
+	fmt.Fprintf(w, "Success Rate:   %.1f%% (%s / %s)\n",
+		m.SuccessRate,
+		formatNumber(m.SuccessCount),
+		formatNumber(m.TotalRequests))
+	fmt.Fprintf(w, "Requests/sec:   %.1f\n", m.RequestsPerSec)
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Response Times:")
+	fmt.Fprintf(w, "  Min:    %s\n", formatDuration(m.Duration.Min))
+	fmt.Fprintf(w, "  Avg:    %s\n", formatDuration(m.Duration.Avg))
+	fmt.Fprintf(w, "  P50:    %s\n", formatDuration(m.Duration.P50))
+	fmt.Fprintf(w, "  P90:    %s\n", formatDuration(m.Duration.P90))
+	fmt.Fprintf(w, "  P95:    %s\n", formatDuration(m.Duration.P95))
+	fmt.Fprintf(w, "  P99:    %s\n", formatDuration(m.Duration.P99))
+	fmt.Fprintf(w, "  Max:    %s\n", formatDuration(m.Duration.Max))
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "By Step:")
+	for step, sm := range m.Steps {
+		fmt.Fprintf(w, "  %-15s %s reqs   avg=%s  p95=%s  p99=%s\n",
+			step,
+			formatNumber(sm.Count),
+			formatDuration(sm.Duration.Avg),
+			formatDuration(sm.Duration.P95),
+			formatDuration(sm.Duration.P99))
+	}
 
-	for _, e := range c.events {
-		if e.Success {
-			successCount++
+	// Print threshold results if provided
+	if thresholds != nil && len(thresholds.Results) > 0 {
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "Thresholds:")
+		for _, result := range thresholds.Results {
+			symbol := "✓"
+			if !result.Passed {
+				symbol = "✗"
+			}
+			fmt.Fprintf(w, "  %s %s < %s (actual: %s)\n",
+				symbol, result.Name, result.Threshold, result.Actual)
 		}
-		totalDuration += e.Duration
-		stepCounts[e.Step]++
-		stepDurations[e.Step] += e.Duration
+	}
+}
+
+// PrintJSON outputs metrics in JSON format.
+func (c *Collector) PrintJSON(w io.Writer, m *Metrics, thresholds *ThresholdResults) {
+	output := struct {
+		Duration       string                  `json:"duration"`
+		TotalRequests  int                     `json:"totalRequests"`
+		SuccessCount   int                     `json:"successCount"`
+		FailureCount   int                     `json:"failureCount"`
+		SuccessRate    float64                 `json:"successRate"`
+		RequestsPerSec float64                 `json:"requestsPerSec"`
+		Durations      jsonDurationMetrics     `json:"durations"`
+		Steps          map[string]jsonStepMetrics `json:"steps"`
+		Thresholds     *ThresholdResults       `json:"thresholds,omitempty"`
+	}{
+		Duration:       m.TestDuration.Round(time.Millisecond).String(),
+		TotalRequests:  m.TotalRequests,
+		SuccessCount:   m.SuccessCount,
+		FailureCount:   m.FailureCount,
+		SuccessRate:    m.SuccessRate,
+		RequestsPerSec: m.RequestsPerSec,
+		Durations:      toJSONDurationMetrics(m.Duration),
+		Steps:          make(map[string]jsonStepMetrics),
+		Thresholds:     thresholds,
 	}
 
-	successRate := float64(successCount) / float64(total) * 100
-	avgDuration := totalDuration / time.Duration(total)
-
-	fmt.Println("\n========== Summary ==========")
-	fmt.Printf("Total events:   %d\n", total)
-	fmt.Printf("Success rate:   %.1f%%\n", successRate)
-	fmt.Printf("Avg duration:   %v\n", avgDuration)
-	fmt.Println("\nBy step:")
-	for step, count := range stepCounts {
-		avg := stepDurations[step] / time.Duration(count)
-		fmt.Printf("  %-20s count=%-5d avg=%v\n", step, count, avg)
+	for step, sm := range m.Steps {
+		output.Steps[step] = jsonStepMetrics{
+			Count:       sm.Count,
+			Success:     sm.Success,
+			Failed:      sm.Failed,
+			SuccessRate: float64(sm.Success) / float64(sm.Count) * 100,
+			Durations:   toJSONDurationMetrics(sm.Duration),
+		}
 	}
-	fmt.Println("=============================")
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(output)
+}
+
+// jsonDurationMetrics is used for JSON serialization with string durations.
+type jsonDurationMetrics struct {
+	Min string `json:"min"`
+	Max string `json:"max"`
+	Avg string `json:"avg"`
+	P50 string `json:"p50"`
+	P90 string `json:"p90"`
+	P95 string `json:"p95"`
+	P99 string `json:"p99"`
+}
+
+type jsonStepMetrics struct {
+	Count       int                 `json:"count"`
+	Success     int                 `json:"success"`
+	Failed      int                 `json:"failed"`
+	SuccessRate float64             `json:"successRate"`
+	Durations   jsonDurationMetrics `json:"durations"`
+}
+
+func toJSONDurationMetrics(d DurationMetrics) jsonDurationMetrics {
+	return jsonDurationMetrics{
+		Min: formatDuration(d.Min),
+		Max: formatDuration(d.Max),
+		Avg: formatDuration(d.Avg),
+		P50: formatDuration(d.P50),
+		P90: formatDuration(d.P90),
+		P95: formatDuration(d.P95),
+		P99: formatDuration(d.P99),
+	}
+}
+
+// formatNumber adds commas to large numbers.
+func formatNumber(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
 }

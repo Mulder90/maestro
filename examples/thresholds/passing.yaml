@@ -1,0 +1,21 @@
+workflow:
+  name: "Threshold Test - Expected to Pass"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://httpbin.org/delay/0"
+
+loadProfile:
+  phases:
+    - name: "steady"
+      duration: 10s
+      actors: 5
+      rps: 10
+
+# These thresholds are set generously so the test should pass
+thresholds:
+  http_req_duration:
+    p95: 5s        # p95 must be < 5s
+    p99: 10s       # p99 must be < 10s
+  http_req_failed:
+    rate: 10%      # error rate must be < 10%

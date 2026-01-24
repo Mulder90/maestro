@@ -24,7 +24,7 @@ burstsmith --config=examples/simple/health-check.yaml --actors=5 --duration=10s
 ## Usage
 
 ```
-burstsmith --config=<path> [--actors=N] [--duration=D]
+burstsmith --config=<path> [options]
 ```
 
 | Flag | Default | Description |
@@ -32,6 +32,16 @@ burstsmith --config=<path> [--actors=N] [--duration=D]
 | `--config` | (required) | Path to YAML workflow config |
 | `--actors` | 5 | Number of concurrent actors |
 | `--duration` | 10s | Test duration (e.g., 30s, 1m, 5m) |
+| `--output` | text | Output format: `text` or `json` |
+| `--quiet` | false | Suppress progress output during test |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Test passed (all thresholds met) |
+| 1 | Threshold failed |
+| 2 | Error (config error, etc.) |
 
 ## Configuration
 
@@ -124,6 +134,123 @@ When `loadProfile` is present, the `--actors` and `--duration` flags are ignored
 | `endActors` | Ending actor count (for ramp phases) |
 | `rps` | Rate limit in requests per second (optional) |
 
+## Thresholds
+
+Define pass/fail criteria for CI/CD integration:
+
+```yaml
+workflow:
+  name: "API Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "https://api.example.com/health"
+
+loadProfile:
+  phases:
+    - name: "steady"
+      duration: 1m
+      actors: 10
+      rps: 100
+
+thresholds:
+  http_req_duration:
+    p95: 500ms    # p95 must be < 500ms
+    p99: 1s       # p99 must be < 1s
+  http_req_failed:
+    rate: 1%      # error rate must be < 1%
+```
+
+### Threshold Fields
+
+**http_req_duration** - Response time limits:
+| Field | Description |
+|-------|-------------|
+| `avg` | Average response time |
+| `p50` | 50th percentile (median) |
+| `p90` | 90th percentile |
+| `p95` | 95th percentile |
+| `p99` | 99th percentile |
+
+**http_req_failed** - Error rate limit:
+| Field | Description |
+|-------|-------------|
+| `rate` | Maximum allowed error rate (e.g., `1%`, `0.5%`) |
+
+## Output Formats
+
+### Text Output (default)
+
+```
+BurstSmith - Load Test Results
+==============================
+
+Duration:       1m30s
+Total Requests: 4,523
+Success Rate:   99.2% (4,487 / 4,523)
+Requests/sec:   50.3
+
+Response Times:
+  Min:    12ms
+  Avg:    145ms
+  P50:    132ms
+  P90:    245ms
+  P95:    312ms
+  P99:    487ms
+  Max:    1.2s
+
+By Step:
+  health          4,523 reqs   avg=145ms  p95=312ms  p99=487ms
+
+Thresholds:
+  ✓ http_req_duration.p95 < 500ms (actual: 312ms)
+  ✓ http_req_duration.p99 < 1s (actual: 487ms)
+  ✓ http_req_failed.rate < 1% (actual: 0.8%)
+```
+
+### JSON Output
+
+Use `--output=json` for CI/CD integration:
+
+```bash
+burstsmith --config=config.yaml --output=json
+```
+
+```json
+{
+  "duration": "1m30s",
+  "totalRequests": 4523,
+  "successCount": 4487,
+  "failureCount": 36,
+  "successRate": 99.2,
+  "requestsPerSec": 50.3,
+  "durations": {
+    "min": "12ms",
+    "avg": "145ms",
+    "p50": "132ms",
+    "p90": "245ms",
+    "p95": "312ms",
+    "p99": "487ms",
+    "max": "1.2s"
+  },
+  "steps": {
+    "health": {
+      "count": 4523,
+      "success": 4487,
+      "failed": 36,
+      "successRate": 99.2,
+      "durations": { ... }
+    }
+  },
+  "thresholds": {
+    "passed": true,
+    "results": [
+      {"name": "http_req_duration.p95", "passed": true, "threshold": "500ms", "actual": "312ms"}
+    ]
+  }
+}
+```
+
 ## Examples
 
 The `examples/` folder contains ready-to-run configurations:
@@ -173,6 +300,20 @@ burstsmith --config=examples/profiles/steady-rate.yaml
 burstsmith --config=examples/profiles/burst.yaml
 ```
 
+### Thresholds
+```bash
+# Test with passing thresholds (exit code 0)
+burstsmith --config=examples/thresholds/passing.yaml
+echo $?  # 0
+
+# Test with failing thresholds (exit code 1)
+burstsmith --config=examples/thresholds/failing.yaml
+echo $?  # 1
+
+# JSON output for CI/CD
+burstsmith --config=examples/thresholds/passing.yaml --output=json --quiet
+```
+
 ## Testing
 
 Run all tests:
@@ -219,7 +360,7 @@ BurstSmith uses an actor-based concurrency model:
 
 Each actor runs the complete workflow in a loop until stopped or the duration expires.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed design documentation.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed design documentation and [docs/ROADMAP.md](docs/ROADMAP.md) for future plans.
 
 ## License
 

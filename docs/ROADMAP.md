@@ -1,0 +1,281 @@
+# BurstSmith Roadmap
+
+## Current State
+
+BurstSmith is a functional HTTP load testing tool with:
+- Actor-based concurrency model
+- YAML-configured workflows
+- Load profiles (ramp, steady, burst patterns)
+- Rate limiting
+- Basic metrics (success rate, avg duration)
+
+## Production Readiness Gaps
+
+### 1. Metrics & Reporting
+
+**Current**: Only prints summary to console after test completes.
+
+**Needed**:
+- [ ] Percentiles (p50, p90, p95, p99)
+- [ ] Histogram of response times
+- [ ] Real-time metrics during test
+- [ ] Export formats (JSON, CSV, HTML report)
+- [ ] Integration with observability tools (Prometheus, InfluxDB, Grafana)
+
+### 2. Assertions & Thresholds
+
+**Current**: No pass/fail criteria.
+
+**Needed**:
+- [ ] Threshold definitions (e.g., `p99 < 500ms`, `error_rate < 1%`)
+- [ ] Exit code based on thresholds (for CI/CD)
+- [ ] Per-step assertions
+- [ ] Response body validation
+
+### 3. Request Dynamism
+
+**Current**: Static URLs, headers, and bodies.
+
+**Needed**:
+- [ ] Variable extraction from responses (JSONPath, regex)
+- [ ] Variable substitution in requests (`${variable}`)
+- [ ] Data files (CSV, JSON) for parameterization
+- [ ] Built-in functions (random, uuid, timestamp)
+
+### 4. Authentication
+
+**Current**: Manual header configuration only.
+
+**Needed**:
+- [ ] OAuth2 client credentials flow
+- [ ] JWT token refresh
+- [ ] Basic auth helper
+- [ ] Cookie jar / session handling
+
+### 5. Operational
+
+**Current**: Single process, local execution.
+
+**Needed**:
+- [ ] Graceful shutdown with partial results
+- [ ] Progress bar / live dashboard
+- [ ] Debug mode with request/response logging
+- [ ] Distributed execution (multiple machines)
+
+## Protocol Support
+
+### Current Architecture Limitation
+
+The `Workflow` interface is generic, but `HTTPWorkflow` is tightly coupled:
+
+```go
+type Workflow interface {
+    Run(ctx context.Context, actorID int, coord Coordinator, rep Reporter) error
+}
+```
+
+This is actually flexible enough. The issue is:
+1. Config parsing assumes HTTP steps
+2. No abstraction for "step" or "client"
+
+### Proposed Protocol Abstraction
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Workflow                            │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │                    Steps[]                       │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐           │    │
+│  │  │  Step   │ │  Step   │ │  Step   │           │    │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘           │    │
+│  └───────┼───────────┼───────────┼─────────────────┘    │
+└──────────┼───────────┼───────────┼──────────────────────┘
+           │           │           │
+           ▼           ▼           ▼
+     ┌──────────┐ ┌──────────┐ ┌──────────┐
+     │  HTTP    │ │  gRPC    │ │WebSocket │
+     │ Executor │ │ Executor │ │ Executor │
+     └──────────┘ └──────────┘ └──────────┘
+```
+
+### Step Interface
+
+```go
+type Step interface {
+    Execute(ctx context.Context, vars Variables) (Result, error)
+    Name() string
+}
+
+type Result struct {
+    Duration time.Duration
+    Success  bool
+    Error    string
+    Extract  map[string]any  // extracted variables
+}
+
+type Variables interface {
+    Get(key string) (any, bool)
+    Set(key string, value any)
+}
+```
+
+### Protocol Implementations
+
+| Protocol | Use Case | Complexity |
+|----------|----------|------------|
+| **HTTP/1.1** | REST APIs | ✅ Done |
+| **HTTP/2** | Modern APIs, gRPC-web | Low (stdlib supports it) |
+| **gRPC** | Microservices | Medium |
+| **WebSocket** | Real-time apps, chat | Medium |
+| **GraphQL** | Query APIs | Low (HTTP + query builder) |
+| **TCP/UDP** | Raw protocols, games | Medium |
+| **Kafka** | Event streaming | High |
+| **AMQP** | Message queues | High |
+
+### Config Evolution
+
+Current (HTTP-only):
+```yaml
+workflow:
+  steps:
+    - name: "get_user"
+      method: GET
+      url: "https://api.example.com/users/1"
+```
+
+Proposed (multi-protocol):
+```yaml
+workflow:
+  steps:
+    - name: "get_user"
+      protocol: http
+      http:
+        method: GET
+        url: "https://api.example.com/users/${user_id}"
+        extract:
+          user_name: "$.name"
+
+    - name: "stream_updates"
+      protocol: websocket
+      websocket:
+        url: "wss://api.example.com/updates"
+        send: '{"subscribe": "${user_name}"}'
+        expect:
+          count: 5
+          timeout: 10s
+
+    - name: "call_service"
+      protocol: grpc
+      grpc:
+        address: "localhost:50051"
+        service: "UserService"
+        method: "GetProfile"
+        message:
+          user_id: "${user_id}"
+```
+
+## Implementation Phases
+
+### Phase 1: Production-Ready HTTP (v1.0)
+Focus: Make HTTP testing production-ready
+
+1. **Metrics enhancement**
+   - Add percentile calculations (p50, p90, p95, p99)
+   - JSON output format
+   - Exit codes based on thresholds
+
+2. **Basic dynamism**
+   - Variable extraction (JSONPath)
+   - Variable substitution in requests
+   - Environment variable support
+
+3. **Operational**
+   - Progress indicator
+   - Debug/verbose mode
+   - Graceful shutdown
+
+### Phase 2: Extensibility (v1.5)
+Focus: Prepare architecture for multi-protocol
+
+1. **Refactor to Step interface**
+   - Extract step execution from HTTPWorkflow
+   - Create StepExecutor abstraction
+   - Plugin-style protocol registration
+
+2. **Enhanced data handling**
+   - CSV data files
+   - Request/response logging
+   - Assertions framework
+
+### Phase 3: Multi-Protocol (v2.0)
+Focus: Add additional protocols
+
+1. **gRPC support**
+   - Proto file loading
+   - Unary and streaming calls
+
+2. **WebSocket support**
+   - Connection lifecycle
+   - Message sending/receiving
+   - Assertions on messages
+
+3. **GraphQL support**
+   - Query/mutation builder
+   - Variable injection
+
+### Phase 4: Enterprise (v3.0)
+Focus: Scale and integrate
+
+1. **Distributed execution**
+   - Controller/worker architecture
+   - Result aggregation
+
+2. **Observability integration**
+   - Prometheus metrics endpoint
+   - OpenTelemetry tracing
+   - Grafana dashboard templates
+
+3. **Advanced features**
+   - Scenario scripting (JS/Lua)
+   - Record & replay
+   - Chaos injection
+
+## Decision Points
+
+### 1. Configuration Language
+- **YAML** (current): Simple, readable, limited logic
+- **HCL**: Terraform-style, better for complex configs
+- **Scripting (JS/Lua)**: Maximum flexibility, higher complexity
+
+**Recommendation**: Stay with YAML for v1.x, consider HCL or embedded scripting for v2+
+
+### 2. Plugin Architecture
+- **Compiled-in**: All protocols in main binary
+- **Go plugins**: Dynamic loading, platform-limited
+- **Subprocess**: External executors, language-agnostic
+
+**Recommendation**: Compiled-in for v1-v2, consider subprocess model for v3
+
+### 3. Distributed Model
+- **Single binary**: One process does everything
+- **Controller/Worker**: Separate coordination from execution
+- **Mesh**: Peer-to-peer coordination
+
+**Recommendation**: Single binary through v2, controller/worker for v3
+
+## Competitive Landscape
+
+| Tool | Strengths | Weaknesses |
+|------|-----------|------------|
+| **k6** | JS scripting, cloud service | Complex for simple tests |
+| **Locust** | Python, distributed | Python dependency |
+| **Gatling** | Scala DSL, detailed reports | JVM, steep learning curve |
+| **wrk** | Extremely fast | Limited features, Lua scripting |
+| **hey** | Simple, fast | No workflows, HTTP only |
+| **vegeta** | Library + CLI, streaming | No workflows |
+
+**BurstSmith positioning**:
+- Simpler than k6/Gatling for common cases
+- More capable than hey/wrk for workflows
+- Go-native (single binary, no runtime)
+- YAML-first configuration
