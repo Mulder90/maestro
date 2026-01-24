@@ -1,0 +1,6 @@
+workflow:
+  name: "Local Health Check"
+  steps:
+    - name: "health"
+      method: GET
+      url: "http://localhost:8080/health"

@@ -1,0 +1,19 @@
+workflow:
+  name: "Error Simulation"
+  steps:
+    - name: "flaky-endpoint"
+      method: GET
+      url: "http://localhost:8080/fail-rate?rate=10"
+
+loadProfile:
+  phases:
+    - name: "test"
+      duration: 15s
+      actors: 5
+      rps: 20
+
+# This should fail since we're expecting <5% error rate
+# but the endpoint is configured to fail 10% of requests
+thresholds:
+  http_req_failed:
+    rate: 5%

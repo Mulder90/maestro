@@ -1,0 +1,20 @@
+workflow:
+  name: "Threshold Test (Local)"
+  steps:
+    - name: "api"
+      method: GET
+      url: "http://localhost:8080/random-delay?min=10&max=50"
+
+loadProfile:
+  phases:
+    - name: "test"
+      duration: 10s
+      actors: 5
+      rps: 50
+
+thresholds:
+  http_req_duration:
+    p95: 100ms
+    p99: 200ms
+  http_req_failed:
+    rate: 1%

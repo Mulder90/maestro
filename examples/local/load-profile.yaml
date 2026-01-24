@@ -1,0 +1,23 @@
+workflow:
+  name: "Local Load Profile Test"
+  steps:
+    - name: "api"
+      method: GET
+      url: "http://localhost:8080/random-delay?min=5&max=20"
+
+loadProfile:
+  phases:
+    - name: "warmup"
+      duration: 5s
+      startActors: 1
+      endActors: 10
+
+    - name: "steady"
+      duration: 10s
+      actors: 10
+      rps: 100
+
+    - name: "cooldown"
+      duration: 5s
+      startActors: 10
+      endActors: 1

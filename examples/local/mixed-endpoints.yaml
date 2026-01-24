@@ -1,0 +1,17 @@
+workflow:
+  name: "Mixed Endpoints Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "http://localhost:8080/health"
+
+    - name: "json"
+      method: GET
+      url: "http://localhost:8080/json"
+
+    - name: "echo"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+      body: '{"message": "hello", "timestamp": 12345}'

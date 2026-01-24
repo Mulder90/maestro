@@ -1,0 +1,14 @@
+workflow:
+  name: "Delay Test"
+  steps:
+    - name: "fast"
+      method: GET
+      url: "http://localhost:8080/delay/10"
+
+    - name: "medium"
+      method: GET
+      url: "http://localhost:8080/delay/50"
+
+    - name: "slow"
+      method: GET
+      url: "http://localhost:8080/delay/100"

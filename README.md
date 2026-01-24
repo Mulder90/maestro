@@ -314,6 +314,34 @@ echo $?  # 1
 burstsmith --config=examples/thresholds/passing.yaml --output=json --quiet
 ```
 
+### Local Test Server
+
+BurstSmith includes a configurable test server for fast, offline testing:
+
+```bash
+# Build and start the test server
+go build -o /tmp/testserver ./cmd/testserver
+/tmp/testserver --port=8080
+
+# In another terminal, run tests against it
+burstsmith --config=examples/local/health-check.yaml --duration=10s
+burstsmith --config=examples/local/load-profile.yaml
+burstsmith --config=examples/local/with-thresholds.yaml
+```
+
+Test server endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check, returns `{"status":"ok"}` |
+| `GET /status/{code}` | Returns specified HTTP status code |
+| `GET /delay/{ms}` | Delays response by specified milliseconds |
+| `POST /echo` | Echoes request body with same content-type |
+| `GET /random-delay?min=X&max=Y` | Random delay between min and max ms |
+| `GET /fail-rate?rate=N` | Fails N% of requests with 500 status |
+| `GET /json` | Returns JSON with id, timestamp, method, path |
+| `GET /headers` | Returns request headers as JSON |
+
 ## Testing
 
 Run all tests:
