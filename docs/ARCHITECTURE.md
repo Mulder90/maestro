@@ -1,10 +1,10 @@
-# BurstSmith Architecture
+# Maestro Architecture
 
 A minimal, idiomatic Go CLI load-testing tool using an actor-based model with goroutines and context.Context.
 
 ## Overview
 
-BurstSmith executes HTTP workflows with configurable concurrency patterns. It supports two modes:
+Maestro executes HTTP workflows with configurable concurrency patterns. It supports two modes:
 
 1. **Classic mode**: Fixed number of actors for a set duration
 2. **Profile mode**: Dynamic actor scaling with phases (ramp up, steady state, ramp down) and rate limiting
@@ -211,9 +211,9 @@ spawnWithStop() ──▶ goroutine starts ──▶ workflow.Run() loop
 ## Project Structure
 
 ```
-burstsmith/
+maestro/
 ├── cmd/
-│   ├── burstsmith/
+│   ├── maestro/
 │   │   └── main.go              # CLI entry point, flag parsing, wiring
 │   └── testserver/
 │       └── main.go              # Test server CLI

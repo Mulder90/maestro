@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"burstsmith/internal/collector"
-	"burstsmith/internal/config"
-	"burstsmith/internal/coordinator"
-	httpworkflow "burstsmith/internal/http"
-	"burstsmith/internal/progress"
-	"burstsmith/internal/ratelimit"
+	"maestro/internal/collector"
+	"maestro/internal/config"
+	"maestro/internal/coordinator"
+	httpworkflow "maestro/internal/http"
+	"maestro/internal/progress"
+	"maestro/internal/ratelimit"
 )
 
 const (
@@ -123,7 +123,7 @@ func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coor
 		os.Exit(ExitError)
 	}
 
-	prog.Printf("BurstSmith starting: %d actors, duration %v, workflow %q",
+	prog.Printf("Maestro starting: %d actors, duration %v, workflow %q",
 		actors, duration, cfg.Workflow.Name)
 
 	ctx, cancel := context.WithTimeout(ctx, duration)
@@ -138,7 +138,7 @@ func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coor
 func runWithProfile(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress) {
 	profile := cfg.LoadProfile
 
-	prog.Printf("BurstSmith starting with load profile, workflow %q", cfg.Workflow.Name)
+	prog.Printf("Maestro starting with load profile, workflow %q", cfg.Workflow.Name)
 
 	// Find first non-zero RPS to initialize rate limiter
 	var rateLimiter *ratelimit.RateLimiter

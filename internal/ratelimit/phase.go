@@ -3,8 +3,8 @@ package ratelimit
 import (
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
+	"maestro/internal/config"
+	"maestro/internal/core"
 )
 
 type PhaseManager struct {

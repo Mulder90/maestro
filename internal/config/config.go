@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"burstsmith/internal/collector"
+	"maestro/internal/collector"
 
 	"gopkg.in/yaml.v3"
 )

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/core"
+	"maestro/internal/core"
 )
 
 func TestCollector_CollectsEvents(t *testing.T) {
@@ -280,7 +280,7 @@ func TestCollector_PrintText(t *testing.T) {
 	output := buf.String()
 
 	// Should contain expected text elements
-	if !strings.Contains(output, "BurstSmith - Load Test Results") {
+	if !strings.Contains(output, "Maestro - Load Test Results") {
 		t.Errorf("expected header in text output, got: %s", output)
 	}
 	if !strings.Contains(output, "Total Requests:") {

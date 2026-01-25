@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
-	"burstsmith/internal/ratelimit"
+	"maestro/internal/config"
+	"maestro/internal/core"
+	"maestro/internal/ratelimit"
 )
 
 type Workflow struct {

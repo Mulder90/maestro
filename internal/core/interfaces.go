@@ -1,4 +1,4 @@
-// Package core defines the fundamental interfaces and types for BurstSmith.
+// Package core defines the fundamental interfaces and types for Maestro.
 package core
 
 import (
@@ -11,7 +11,7 @@ type Event struct {
 	ActorID    int
 	Timestamp  time.Time
 	Step       string
-	Protocol   string        // "http", "grpc", "websocket"
+	Protocol   string // "http", "grpc", "websocket"
 	Duration   time.Duration
 	Success    bool
 	Error      string

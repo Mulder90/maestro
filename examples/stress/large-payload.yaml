@@ -20,7 +20,7 @@ workflow:
             ],
             "metadata": {
               "version": "1.0.0",
-              "source": "burstsmith-stress-test",
+              "source": "maestro-stress-test",
               "tags": ["load-test", "performance", "stress", "large-payload"],
               "config": {
                 "retries": 3,

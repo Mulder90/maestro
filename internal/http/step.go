@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
+	"maestro/internal/config"
+	"maestro/internal/core"
 )
 
 const maxDebugBodySize = 4096

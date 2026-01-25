@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"burstsmith/internal/core"
+	"maestro/internal/core"
 )
 
 // Collector aggregates events from actors and produces a summary.
@@ -145,7 +145,7 @@ func (c *Collector) PrintText(w io.Writer, m *Metrics, thresholds *ThresholdResu
 	}
 
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "BurstSmith - Load Test Results")
+	fmt.Fprintln(w, "Maestro - Load Test Results")
 	fmt.Fprintln(w, "==============================")
 	fmt.Fprintln(w, "")
 	fmt.Fprintf(w, "Duration:       %v\n", m.TestDuration.Round(time.Millisecond))

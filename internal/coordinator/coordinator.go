@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
-	"burstsmith/internal/progress"
-	"burstsmith/internal/ratelimit"
+	"maestro/internal/config"
+	"maestro/internal/core"
+	"maestro/internal/progress"
+	"maestro/internal/ratelimit"
 )
 
 type Coordinator struct {

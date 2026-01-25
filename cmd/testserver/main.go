@@ -19,7 +19,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"burstsmith/testserver"
+	"maestro/testserver"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 
 	// Print available endpoints
-	fmt.Println("BurstSmith Test Server")
+	fmt.Println("Maestro Test Server")
 	fmt.Println("======================")
 	fmt.Printf("Listening on http://%s\n\n", addr)
 	fmt.Println("Endpoints:")

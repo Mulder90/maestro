@@ -1,4 +1,4 @@
-module burstsmith
+module maestro
 
 go 1.21
 

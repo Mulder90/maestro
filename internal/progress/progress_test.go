@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/collector"
-	"burstsmith/internal/core"
+	"maestro/internal/collector"
+	"maestro/internal/core"
 )
 
 func TestNewProgress(t *testing.T) {

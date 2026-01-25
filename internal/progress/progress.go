@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"burstsmith/internal/collector"
+	"maestro/internal/collector"
 )
 
 type Progress struct {

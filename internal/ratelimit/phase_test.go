@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
+	"maestro/internal/config"
+	"maestro/internal/core"
 )
 
 func TestPhaseManager_SteadyPhase(t *testing.T) {

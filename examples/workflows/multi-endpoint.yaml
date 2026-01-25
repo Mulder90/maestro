@@ -18,7 +18,7 @@ workflow:
       url: "https://httpbin.org/anything"
       headers:
         Content-Type: "application/json"
-      body: '{"message": "hello from burstsmith"}'
+      body: '{"message": "hello from maestro"}'
 
     - name: "get_uuid"
       method: GET

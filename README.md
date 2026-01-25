@@ -1,30 +1,30 @@
-# BurstSmith
+# Maestro
 
-A minimal, idiomatic Go CLI load-testing tool using an actor-based model.
+An idiomatic Go CLI load-testing tool using a goroutiner actor-based model and YAML-configured workflows.
 
 ## Installation
 
 ```bash
-go install ./cmd/burstsmith
+go install ./cmd/maestro
 ```
 
 Or build locally:
 
 ```bash
-go build -o burstsmith ./cmd/burstsmith
+go build -o maestro ./cmd/maestro
 ```
 
 ## Quick Start
 
 ```bash
 # Run a simple health check with 5 actors for 10 seconds
-burstsmith --config=examples/simple/health-check.yaml --actors=5 --duration=10s
+maestro --config=examples/simple/health-check.yaml --actors=5 --duration=10s
 ```
 
 ## Usage
 
 ```
-burstsmith --config=<path> [options]
+maestro --config=<path> [options]
 ```
 
 | Flag | Default | Description |
@@ -183,7 +183,7 @@ thresholds:
 ### Text Output (default)
 
 ```
-BurstSmith - Load Test Results
+Maestro - Load Test Results
 ==============================
 
 Duration:       1m30s
@@ -214,7 +214,7 @@ Thresholds:
 Use `--output=json` for CI/CD integration:
 
 ```bash
-burstsmith --config=config.yaml --output=json
+maestro --config=config.yaml --output=json
 ```
 
 ```json
@@ -259,62 +259,62 @@ The `examples/` folder contains ready-to-run configurations:
 ### Simple
 ```bash
 # Single GET request
-burstsmith --config=examples/simple/health-check.yaml --actors=2 --duration=5s
+maestro --config=examples/simple/health-check.yaml --actors=2 --duration=5s
 
 # POST with JSON body
-burstsmith --config=examples/simple/post-json.yaml --actors=2 --duration=5s
+maestro --config=examples/simple/post-json.yaml --actors=2 --duration=5s
 
 # Custom headers
-burstsmith --config=examples/simple/with-headers.yaml --actors=2 --duration=5s
+maestro --config=examples/simple/with-headers.yaml --actors=2 --duration=5s
 ```
 
 ### Workflows
 ```bash
 # CRUD operations flow
-burstsmith --config=examples/workflows/crud-api.yaml --actors=3 --duration=10s
+maestro --config=examples/workflows/crud-api.yaml --actors=3 --duration=10s
 
 # Authentication flow
-burstsmith --config=examples/workflows/auth-flow.yaml --actors=3 --duration=10s
+maestro --config=examples/workflows/auth-flow.yaml --actors=3 --duration=10s
 
 # Multiple endpoints
-burstsmith --config=examples/workflows/multi-endpoint.yaml --actors=3 --duration=10s
+maestro --config=examples/workflows/multi-endpoint.yaml --actors=3 --duration=10s
 ```
 
 ### Stress Tests
 ```bash
 # Large payload
-burstsmith --config=examples/stress/large-payload.yaml --actors=5 --duration=10s
+maestro --config=examples/stress/large-payload.yaml --actors=5 --duration=10s
 ```
 
 ### Load Profiles
 ```bash
 # Ramp up, steady state, ramp down
-burstsmith --config=examples/profiles/ramp-up-down.yaml
+maestro --config=examples/profiles/ramp-up-down.yaml
 
 # Constant rate with RPS limiting
-burstsmith --config=examples/profiles/steady-rate.yaml
+maestro --config=examples/profiles/steady-rate.yaml
 
 # Burst/spike pattern
-burstsmith --config=examples/profiles/burst.yaml
+maestro --config=examples/profiles/burst.yaml
 ```
 
 ### Thresholds
 ```bash
 # Test with passing thresholds (exit code 0)
-burstsmith --config=examples/thresholds/passing.yaml
+maestro --config=examples/thresholds/passing.yaml
 echo $?  # 0
 
 # Test with failing thresholds (exit code 1)
-burstsmith --config=examples/thresholds/failing.yaml
+maestro --config=examples/thresholds/failing.yaml
 echo $?  # 1
 
 # JSON output for CI/CD
-burstsmith --config=examples/thresholds/passing.yaml --output=json --quiet
+maestro --config=examples/thresholds/passing.yaml --output=json --quiet
 ```
 
 ### Local Test Server
 
-BurstSmith includes a configurable test server for fast, offline testing:
+Maestro includes a configurable test server for fast, offline testing:
 
 ```bash
 # Build and start the test server
@@ -322,9 +322,9 @@ go build -o /tmp/testserver ./cmd/testserver
 /tmp/testserver --port=8080
 
 # In another terminal, run tests against it
-burstsmith --config=examples/local/health-check.yaml --duration=10s
-burstsmith --config=examples/local/load-profile.yaml
-burstsmith --config=examples/local/with-thresholds.yaml
+maestro --config=examples/local/health-check.yaml --duration=10s
+maestro --config=examples/local/load-profile.yaml
+maestro --config=examples/local/with-thresholds.yaml
 ```
 
 Test server endpoints:
@@ -375,7 +375,7 @@ go tool cover -html=coverage.out
 
 ## Architecture
 
-BurstSmith uses an actor-based concurrency model:
+Maestro uses an actor-based concurrency model:
 
 - **Actors**: Goroutines that execute workflows independently
 - **Coordinator**: Spawns/terminates actors dynamically based on load profile

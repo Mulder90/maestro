@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
+	"maestro/internal/config"
+	"maestro/internal/core"
 )
 
 func TestStep_SuccessfulGET(t *testing.T) {

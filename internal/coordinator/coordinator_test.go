@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/collector"
-	"burstsmith/internal/config"
-	"burstsmith/internal/core"
-	"burstsmith/internal/ratelimit"
+	"maestro/internal/collector"
+	"maestro/internal/config"
+	"maestro/internal/core"
+	"maestro/internal/ratelimit"
 )
 
 // mockWorkflow tracks how many times it was run

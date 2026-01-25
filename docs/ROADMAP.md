@@ -1,8 +1,8 @@
-# BurstSmith Roadmap
+# Maestro Roadmap
 
 ## Current State
 
-BurstSmith is a functional HTTP load testing tool with:
+Maestro is a functional HTTP load testing tool with:
 - Actor-based concurrency model
 - YAML-configured workflows
 - Load profiles (ramp, steady, burst patterns)
@@ -283,7 +283,7 @@ Focus: Scale and integrate
 | **hey** | Simple, fast | No workflows, HTTP only |
 | **vegeta** | Library + CLI, streaming | No workflows |
 
-**BurstSmith positioning**:
+**Maestro positioning**:
 - Simpler than k6/Gatling for common cases
 - More capable than hey/wrk for workflows
 - Go-native (single binary, no runtime)

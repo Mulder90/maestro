@@ -1,4 +1,4 @@
-package burstsmith_test
+package maestro_test
 
 import (
 	"context"
@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"burstsmith/internal/collector"
-	"burstsmith/internal/config"
-	"burstsmith/internal/coordinator"
-	httpwf "burstsmith/internal/http"
-	"burstsmith/internal/ratelimit"
+	"maestro/internal/collector"
+	"maestro/internal/config"
+	"maestro/internal/coordinator"
+	httpwf "maestro/internal/http"
+	"maestro/internal/ratelimit"
 )
 
 // Integration tests verify end-to-end behavior of the load testing tool
