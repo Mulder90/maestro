@@ -5,6 +5,7 @@
 *.so
 *.dylib
 /burstsmith
+/testserver/testserver
 
 # Test binary, built with `go test -c`
 *.test

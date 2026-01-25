@@ -1,4 +1,4 @@
-package burstsmith
+package collector
 
 import (
 	"fmt"
@@ -24,7 +24,7 @@ type DurationThresholds struct {
 
 // FailureThresholds defines error rate limits.
 type FailureThresholds struct {
-	Rate string `yaml:"rate"` // e.g., "1%" or "0.5%"
+	Rate string `yaml:"rate"`
 }
 
 // ThresholdResult represents the outcome of a single threshold check.
@@ -41,7 +41,7 @@ type ThresholdResults struct {
 	Results []ThresholdResult `json:"results"`
 }
 
-// Check evaluates all thresholds against computed metrics and returns results.
+// Check evaluates all thresholds against computed metrics.
 func (t *Thresholds) Check(m *Metrics) *ThresholdResults {
 	if t == nil {
 		return &ThresholdResults{Passed: true, Results: nil}
@@ -52,12 +52,10 @@ func (t *Thresholds) Check(m *Metrics) *ThresholdResults {
 		Results: make([]ThresholdResult, 0),
 	}
 
-	// Check duration thresholds
 	if t.HTTPReqDuration != nil {
 		results.checkDurationThresholds(t.HTTPReqDuration, &m.Duration)
 	}
 
-	// Check failure rate threshold
 	if t.HTTPReqFailed != nil && t.HTTPReqFailed.Rate != "" {
 		results.checkFailureRate(t.HTTPReqFailed, m)
 	}
@@ -80,7 +78,7 @@ func (r *ThresholdResults) checkDurationThresholds(thresholds *DurationThreshold
 
 	for _, check := range checks {
 		if check.threshold == 0 {
-			continue // threshold not set
+			continue
 		}
 
 		passed := check.actual < check.threshold
@@ -91,8 +89,8 @@ func (r *ThresholdResults) checkDurationThresholds(thresholds *DurationThreshold
 		r.Results = append(r.Results, ThresholdResult{
 			Name:      check.name,
 			Passed:    passed,
-			Threshold: formatDuration(check.threshold),
-			Actual:    formatDuration(check.actual),
+			Threshold: FormatDuration(check.threshold),
+			Actual:    FormatDuration(check.actual),
 		})
 	}
 }
@@ -100,7 +98,7 @@ func (r *ThresholdResults) checkDurationThresholds(thresholds *DurationThreshold
 func (r *ThresholdResults) checkFailureRate(thresholds *FailureThresholds, m *Metrics) {
 	thresholdRate, err := parsePercentage(thresholds.Rate)
 	if err != nil {
-		return // invalid threshold format
+		return
 	}
 
 	actualRate := 100.0 - m.SuccessRate
@@ -118,7 +116,6 @@ func (r *ThresholdResults) checkFailureRate(thresholds *FailureThresholds, m *Me
 	})
 }
 
-// parsePercentage parses a percentage string like "1%" or "0.5%" to a float64.
 func parsePercentage(s string) (float64, error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasSuffix(s, "%") {
@@ -128,8 +125,8 @@ func parsePercentage(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
-// formatDuration formats a duration for display.
-func formatDuration(d time.Duration) string {
+// FormatDuration formats a duration for display.
+func FormatDuration(d time.Duration) string {
 	if d < time.Millisecond {
 		return fmt.Sprintf("%dµs", d.Microseconds())
 	}

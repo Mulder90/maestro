@@ -1,4 +1,4 @@
-package burstsmith
+package coordinator
 
 import (
 	"context"
@@ -6,50 +6,57 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"burstsmith/internal/config"
+	"burstsmith/internal/core"
+	"burstsmith/internal/progress"
+	"burstsmith/internal/ratelimit"
 )
 
-// DefaultCoordinator spawns actors and assigns unique IDs.
-type DefaultCoordinator struct {
+type Coordinator struct {
 	nextID      atomic.Int64
 	wg          sync.WaitGroup
-	reporter    Reporter
+	reporter    core.Reporter
 	activeCount atomic.Int32
 	stopChans   []chan struct{}
 	stopMu      sync.Mutex
 }
 
-// NewCoordinator creates a new DefaultCoordinator with the given reporter.
-func NewCoordinator(reporter Reporter) *DefaultCoordinator {
-	return &DefaultCoordinator{
+func NewCoordinator(reporter core.Reporter) *Coordinator {
+	return &Coordinator{
 		reporter: reporter,
 	}
 }
 
-// Spawn launches count goroutines, each running the given workflow.
-// Spawned actors inherit the caller's context (shared deadline/cancellation).
-func (c *DefaultCoordinator) Spawn(ctx context.Context, count int, workflow Workflow) {
+func (c *Coordinator) Spawn(ctx context.Context, count int, workflow core.Workflow) {
 	for i := 0; i < count; i++ {
 		actorID := int(c.nextID.Add(1))
 		c.wg.Add(1)
 		go func(id int) {
 			defer c.wg.Done()
-			_ = workflow.Run(ctx, id, c, c.reporter)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					if err := workflow.Run(ctx, id, c, c.reporter); err != nil {
+						return
+					}
+				}
+			}
 		}(actorID)
 	}
 }
 
-// Wait blocks until all spawned actors have completed.
-func (c *DefaultCoordinator) Wait() {
+func (c *Coordinator) Wait() {
 	c.wg.Wait()
 }
 
-// ActiveActors returns the current number of active actors.
-func (c *DefaultCoordinator) ActiveActors() int {
+func (c *Coordinator) ActiveActors() int {
 	return int(c.activeCount.Load())
 }
 
-// spawnWithStop launches an actor that can be stopped via a stop channel.
-func (c *DefaultCoordinator) spawnWithStop(ctx context.Context, workflow Workflow) chan struct{} {
+func (c *Coordinator) spawnWithStop(ctx context.Context, workflow core.Workflow) chan struct{} {
 	stopCh := make(chan struct{})
 	actorID := int(c.nextID.Add(1))
 	c.activeCount.Add(1)
@@ -64,7 +71,6 @@ func (c *DefaultCoordinator) spawnWithStop(ctx context.Context, workflow Workflo
 			c.wg.Done()
 			c.activeCount.Add(-1)
 		}()
-
 		for {
 			select {
 			case <-ctx.Done():
@@ -72,8 +78,7 @@ func (c *DefaultCoordinator) spawnWithStop(ctx context.Context, workflow Workflo
 			case <-stop:
 				return
 			default:
-				err := workflow.Run(ctx, id, c, c.reporter)
-				if err != nil {
+				if err := workflow.Run(ctx, id, c, c.reporter); err != nil {
 					return
 				}
 			}
@@ -83,31 +88,34 @@ func (c *DefaultCoordinator) spawnWithStop(ctx context.Context, workflow Workflo
 	return stopCh
 }
 
-// stopActors terminates n actors by signaling their stop channels.
-func (c *DefaultCoordinator) stopActors(n int) {
+func (c *Coordinator) stopActors(n int) {
 	c.stopMu.Lock()
 	defer c.stopMu.Unlock()
-
 	toStop := n
 	if toStop > len(c.stopChans) {
 		toStop = len(c.stopChans)
 	}
-
 	for i := 0; i < toStop; i++ {
 		close(c.stopChans[i])
 	}
 	c.stopChans = c.stopChans[toStop:]
 }
 
-// RunWithProfile executes a workflow according to a load profile.
-// If progress is provided, phase announcements are printed through it to coordinate with progress display.
-func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadProfile, workflow Workflow, rateLimiter *RateLimiter, progress *Progress) {
-	pm := NewPhaseManager(profile.Phases)
+func (c *Coordinator) stopAllActors() {
+	c.stopMu.Lock()
+	for _, ch := range c.stopChans {
+		close(ch)
+	}
+	c.stopChans = nil
+	c.stopMu.Unlock()
+}
 
-	// Helper function to print messages
+func (c *Coordinator) RunWithProfile(ctx context.Context, profile *config.LoadProfile, workflow core.Workflow, rateLimiter *ratelimit.RateLimiter, prog *progress.Progress) {
+	pm := ratelimit.NewPhaseManager(profile.Phases)
+
 	printMsg := func(format string, args ...interface{}) {
-		if progress != nil {
-			progress.Printf(format, args...)
+		if prog != nil {
+			prog.Printf(format, args...)
 		} else {
 			fmt.Printf(format+"\n", args...)
 		}
@@ -130,8 +138,6 @@ func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadPr
 				c.stopAllActors()
 				return
 			}
-
-			// Check for phase transition
 			newPhaseIdx := pm.CurrentPhaseIndex()
 			if newPhaseIdx != currentPhaseIdx {
 				currentPhaseIdx = newPhaseIdx
@@ -146,35 +152,18 @@ func (c *DefaultCoordinator) RunWithProfile(ctx context.Context, profile *LoadPr
 					}
 				}
 			}
-
-			// Adjust actor count
 			target := pm.TargetActors()
 			current := c.ActiveActors()
-
 			if current < target {
-				// Spawn more actors
 				for i := current; i < target; i++ {
 					c.spawnWithStop(ctx, workflow)
 				}
 			} else if current > target {
-				// Stop excess actors
 				c.stopActors(current - target)
 			}
-
-			// Update rate limiter if RPS changed
 			if rateLimiter != nil {
 				rateLimiter.SetRate(pm.CurrentRPS())
 			}
 		}
 	}
-}
-
-// stopAllActors terminates all running actors.
-func (c *DefaultCoordinator) stopAllActors() {
-	c.stopMu.Lock()
-	for _, ch := range c.stopChans {
-		close(ch)
-	}
-	c.stopChans = nil
-	c.stopMu.Unlock()
 }

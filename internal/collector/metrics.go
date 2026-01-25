@@ -1,4 +1,4 @@
-package burstsmith
+package collector
 
 import (
 	"sort"
@@ -7,13 +7,13 @@ import (
 
 // Metrics contains aggregated test results.
 type Metrics struct {
-	TotalRequests  int              `json:"totalRequests"`
-	SuccessCount   int              `json:"successCount"`
-	FailureCount   int              `json:"failureCount"`
-	SuccessRate    float64          `json:"successRate"`
-	RequestsPerSec float64          `json:"requestsPerSec"`
-	TestDuration   time.Duration    `json:"testDuration"`
-	Duration       DurationMetrics  `json:"durations"`
+	TotalRequests  int                    `json:"totalRequests"`
+	SuccessCount   int                    `json:"successCount"`
+	FailureCount   int                    `json:"failureCount"`
+	SuccessRate    float64                `json:"successRate"`
+	RequestsPerSec float64                `json:"requestsPerSec"`
+	TestDuration   time.Duration          `json:"testDuration"`
+	Duration       DurationMetrics        `json:"durations"`
 	Steps          map[string]*StepMetrics `json:"steps"`
 }
 
@@ -36,9 +36,7 @@ type StepMetrics struct {
 	Duration DurationMetrics `json:"durations"`
 }
 
-// ComputePercentile calculates the percentile value from a sorted slice of durations.
-// The percentile p should be between 0 and 1 (e.g., 0.95 for p95).
-// The slice must be sorted in ascending order.
+// ComputePercentile calculates the percentile value from a sorted slice.
 func ComputePercentile(sorted []time.Duration, p float64) time.Duration {
 	if len(sorted) == 0 {
 		return 0
@@ -52,26 +50,22 @@ func ComputePercentile(sorted []time.Duration, p float64) time.Duration {
 	if p >= 1 {
 		return sorted[len(sorted)-1]
 	}
-
-	// Use the "nearest rank" method
 	index := int(float64(len(sorted)-1) * p)
 	return sorted[index]
 }
 
-// ComputeDurationMetrics calculates all duration statistics from a slice of durations.
+// ComputeDurationMetrics calculates all duration statistics.
 func ComputeDurationMetrics(durations []time.Duration) DurationMetrics {
 	if len(durations) == 0 {
 		return DurationMetrics{}
 	}
 
-	// Sort durations for percentile calculation
 	sorted := make([]time.Duration, len(durations))
 	copy(sorted, durations)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i] < sorted[j]
 	})
 
-	// Calculate total for average
 	var total time.Duration
 	for _, d := range sorted {
 		total += d

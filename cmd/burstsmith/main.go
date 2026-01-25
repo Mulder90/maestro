@@ -10,10 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"burstsmith"
+	"burstsmith/internal/collector"
+	"burstsmith/internal/config"
+	"burstsmith/internal/coordinator"
+	httpworkflow "burstsmith/internal/http"
+	"burstsmith/internal/progress"
+	"burstsmith/internal/ratelimit"
 )
 
-// Exit codes
 const (
 	ExitSuccess         = 0
 	ExitThresholdFailed = 1
@@ -40,24 +44,21 @@ func main() {
 		os.Exit(ExitError)
 	}
 
-	cfg, err := burstsmith.LoadConfig(*configPath)
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(ExitError)
 	}
 
-	// Wire components
-	collector := burstsmith.NewCollector()
-	coordinator := burstsmith.NewCoordinator(collector)
+	coll := collector.NewCollector()
+	coord := coordinator.NewCoordinator(coll)
 
-	// Create debug logger if verbose mode enabled
-	var debugLogger *burstsmith.DebugLogger
+	var debugLogger *httpworkflow.DebugLogger
 	if *verbose {
-		debugLogger = burstsmith.NewDebugLogger(os.Stderr)
+		debugLogger = httpworkflow.NewDebugLogger(os.Stderr)
 	}
 
-	// Create HTTP workflow with shared client
-	workflow := &burstsmith.HTTPWorkflow{
+	workflow := &httpworkflow.Workflow{
 		Config: cfg.Workflow,
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
@@ -65,7 +66,6 @@ func main() {
 		Debug: debugLogger,
 	}
 
-	// Set up graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -80,38 +80,31 @@ func main() {
 		cancel()
 	}()
 
-	// Create progress indicator
-	progress := burstsmith.NewProgress(collector, *quiet)
+	prog := progress.NewProgress(coll, *quiet)
 
-	// Check if load profile is defined
 	if cfg.LoadProfile != nil && len(cfg.LoadProfile.Phases) > 0 {
-		runWithProfile(ctx, cfg, coordinator, workflow, collector, progress)
+		runWithProfile(ctx, cfg, coord, workflow, coll, prog)
 	} else {
-		runClassic(ctx, cfg, coordinator, workflow, collector, progress, *actors, *duration)
+		runClassic(ctx, cfg, coord, workflow, coll, prog, *actors, *duration)
 	}
 
-	// Stop progress indicator
-	progress.Stop()
+	prog.Stop()
 
-	// Compute metrics
-	metrics := collector.Compute()
+	metrics := coll.Compute()
 
-	// Check thresholds
-	var thresholdResults *burstsmith.ThresholdResults
+	var thresholdResults *collector.ThresholdResults
 	if cfg.Thresholds != nil {
 		thresholdResults = cfg.Thresholds.Check(metrics)
 	}
 
-	// Output results
 	if *output == "json" {
-		collector.PrintJSON(os.Stdout, metrics, thresholdResults)
+		coll.PrintJSON(os.Stdout, metrics, thresholdResults)
 	} else {
-		collector.PrintText(os.Stdout, metrics, thresholdResults)
+		coll.PrintText(os.Stdout, metrics, thresholdResults)
 	}
 
-	// Determine exit code
 	if interrupted {
-		os.Exit(ExitSuccess) // Partial results are fine on interrupt
+		os.Exit(ExitSuccess)
 	}
 
 	if thresholdResults != nil && !thresholdResults.Passed {
@@ -124,70 +117,46 @@ func main() {
 	os.Exit(ExitSuccess)
 }
 
-// runClassic executes the workflow with fixed actors and duration (original behavior).
-func runClassic(ctx context.Context, cfg *burstsmith.Config, coordinator *burstsmith.DefaultCoordinator, workflow *burstsmith.HTTPWorkflow, collector *burstsmith.Collector, progress *burstsmith.Progress, actors int, duration time.Duration) {
+func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress, actors int, duration time.Duration) {
 	if actors < 1 {
 		fmt.Fprintln(os.Stderr, "error: --actors must be >= 1")
 		os.Exit(ExitError)
 	}
 
-	progress.Printf("BurstSmith starting: %d actors, duration %v, workflow %q",
+	prog.Printf("BurstSmith starting: %d actors, duration %v, workflow %q",
 		actors, duration, cfg.Workflow.Name)
 
-	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
-	// Start progress indicator
-	progress.Start()
-
-	coordinator.Spawn(ctx, actors, workflow)
-
-	// Wait for all actors to complete
-	coordinator.Wait()
-
-	// Stop collector
-	collector.Close()
+	prog.Start()
+	coord.Spawn(ctx, actors, workflow)
+	coord.Wait()
+	coll.Close()
 }
 
-// runWithProfile executes the workflow according to the load profile.
-func runWithProfile(ctx context.Context, cfg *burstsmith.Config, coordinator *burstsmith.DefaultCoordinator, workflow *burstsmith.HTTPWorkflow, collector *burstsmith.Collector, progress *burstsmith.Progress) {
+func runWithProfile(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress) {
 	profile := cfg.LoadProfile
 
-	progress.Printf("BurstSmith starting with load profile, workflow %q", cfg.Workflow.Name)
+	prog.Printf("BurstSmith starting with load profile, workflow %q", cfg.Workflow.Name)
 
-	// Determine initial RPS from first phase
-	initialRPS := 0
-	if len(profile.Phases) > 0 {
-		initialRPS = profile.Phases[0].RPS
-	}
-
-	// Create rate limiter if any phase has RPS limit
-	var rateLimiter *burstsmith.RateLimiter
+	// Find first non-zero RPS to initialize rate limiter
+	var rateLimiter *ratelimit.RateLimiter
 	for _, phase := range profile.Phases {
 		if phase.RPS > 0 {
-			rateLimiter = burstsmith.NewRateLimiter(initialRPS)
+			rateLimiter = ratelimit.NewRateLimiter(phase.RPS)
 			break
 		}
 	}
 
-	// Attach rate limiter to workflow
 	workflow.RateLimiter = rateLimiter
 
-	// Create context with total profile duration plus buffer
 	totalDuration := profile.TotalDuration() + 5*time.Second
 	ctx, cancel := context.WithTimeout(ctx, totalDuration)
 	defer cancel()
 
-	// Start progress indicator
-	progress.Start()
-
-	// Run with profile-based actor management
-	coordinator.RunWithProfile(ctx, profile, workflow, rateLimiter, progress)
-
-	// Wait for all actors to finish
-	coordinator.Wait()
-
-	// Stop collector
-	collector.Close()
+	prog.Start()
+	coord.RunWithProfile(ctx, profile, workflow, rateLimiter, prog)
+	coord.Wait()
+	coll.Close()
 }

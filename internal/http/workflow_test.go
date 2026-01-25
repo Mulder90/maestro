@@ -1,4 +1,4 @@
-package burstsmith
+package http
 
 import (
 	"context"
@@ -7,6 +7,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"burstsmith/internal/collector"
+	"burstsmith/internal/config"
+	"burstsmith/internal/core"
+	"burstsmith/internal/ratelimit"
 )
 
 func TestHTTPWorkflow_SuccessfulGET(t *testing.T) {
@@ -18,27 +23,28 @@ func TestHTTPWorkflow_SuccessfulGET(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "get", Method: "GET", URL: server.URL},
 			},
 		},
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(collector.events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(collector.events))
+	events := c.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if !collector.events[0].Success {
+	if !events[0].Success {
 		t.Error("expected successful event")
 	}
 }
@@ -59,11 +65,11 @@ func TestHTTPWorkflow_SuccessfulPOST(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{
 					Name:    "post",
 					Method:  "POST",
@@ -76,8 +82,8 @@ func TestHTTPWorkflow_SuccessfulPOST(t *testing.T) {
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -99,11 +105,11 @@ func TestHTTPWorkflow_MultipleSteps(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "step1", Method: "GET", URL: server.URL + "/1"},
 				{Name: "step2", Method: "GET", URL: server.URL + "/2"},
 				{Name: "step3", Method: "GET", URL: server.URL + "/3"},
@@ -112,8 +118,8 @@ func TestHTTPWorkflow_MultipleSteps(t *testing.T) {
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -121,8 +127,9 @@ func TestHTTPWorkflow_MultipleSteps(t *testing.T) {
 	if requestCount.Load() != 3 {
 		t.Errorf("expected 3 requests, got %d", requestCount.Load())
 	}
-	if len(collector.events) != 3 {
-		t.Errorf("expected 3 events, got %d", len(collector.events))
+	events := c.Events()
+	if len(events) != 3 {
+		t.Errorf("expected 3 events, got %d", len(events))
 	}
 }
 
@@ -132,58 +139,60 @@ func TestHTTPWorkflow_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "fail", Method: "GET", URL: server.URL},
 			},
 		},
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	// HTTP errors don't return error, but are marked as unsuccessful
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(collector.events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(collector.events))
+	events := c.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if collector.events[0].Success {
+	if events[0].Success {
 		t.Error("expected unsuccessful event for 500 status")
 	}
-	if collector.events[0].Error == "" {
+	if events[0].Error == "" {
 		t.Error("expected error message in event")
 	}
 }
 
 func TestHTTPWorkflow_ConnectionError(t *testing.T) {
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "fail", Method: "GET", URL: "http://localhost:99999"}, // Invalid port
 			},
 		},
 		Client: &http.Client{Timeout: 1 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	// Connection errors do return error
 	if err == nil {
 		t.Error("expected error for connection failure")
 	}
-	if len(collector.events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(collector.events))
+	events := c.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if collector.events[0].Success {
+	if events[0].Success {
 		t.Error("expected unsuccessful event")
 	}
 }
@@ -197,11 +206,11 @@ func TestHTTPWorkflow_ContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "slow", Method: "GET", URL: server.URL},
 			},
 		},
@@ -212,9 +221,9 @@ func TestHTTPWorkflow_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	_ = workflow.Run(ctx, 1, nil, collector)
+	_ = workflow.Run(ctx, 1, nil, c)
 	elapsed := time.Since(start)
-	collector.Close()
+	c.Close()
 
 	// Should cancel within the timeout window
 	if elapsed > 300*time.Millisecond {
@@ -231,11 +240,11 @@ func TestHTTPWorkflow_CustomHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{
 					Name:   "headers",
 					Method: "GET",
@@ -250,8 +259,8 @@ func TestHTTPWorkflow_CustomHeaders(t *testing.T) {
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -273,13 +282,13 @@ func TestHTTPWorkflow_WithRateLimiter(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	rateLimiter := NewRateLimiter(10) // 10 RPS
+	c := collector.NewCollector()
+	rateLimiter := ratelimit.NewRateLimiter(10) // 10 RPS
 
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "limited", Method: "GET", URL: server.URL},
 			},
 		},
@@ -295,12 +304,12 @@ func TestHTTPWorkflow_WithRateLimiter(t *testing.T) {
 		if ctx.Err() != nil {
 			break
 		}
-		err := workflow.Run(ctx, 1, nil, collector)
+		err := workflow.Run(ctx, 1, nil, c)
 		if err != nil {
 			break
 		}
 	}
-	collector.Close()
+	c.Close()
 
 	// With 10 RPS over 500ms, expect roughly 5-6 requests (initial burst + sustained)
 	// Token bucket allows burst up to the limit, so first 10 go through immediately
@@ -317,25 +326,26 @@ func TestHTTPWorkflow_RecordsDuration(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "slow", Method: "GET", URL: server.URL},
 			},
 		},
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	duration := collector.events[0].Duration
+	events := c.Events()
+	duration := events[0].Duration
 	if duration < 40*time.Millisecond || duration > 200*time.Millisecond {
 		t.Errorf("expected duration ~50ms, got %v", duration)
 	}
@@ -354,19 +364,19 @@ func TestHTTPWorkflow_AllHTTPMethods(t *testing.T) {
 			}))
 			defer server.Close()
 
-			collector := NewCollector()
-			workflow := &HTTPWorkflow{
-				Config: WorkflowConfig{
+			c := collector.NewCollector()
+			workflow := &Workflow{
+				Config: config.WorkflowConfig{
 					Name: "Test",
-					Steps: []StepConfig{
+					Steps: []config.StepConfig{
 						{Name: "test", Method: method, URL: server.URL},
 					},
 				},
 				Client: &http.Client{Timeout: 5 * time.Second},
 			}
 
-			_ = workflow.Run(context.Background(), 1, nil, collector)
-			collector.Close()
+			_ = workflow.Run(context.Background(), 1, nil, c)
+			c.Close()
 
 			if receivedMethod != method {
 				t.Errorf("expected method %s, got %s", method, receivedMethod)
@@ -388,11 +398,11 @@ func TestHTTPWorkflow_ContinuesAfterHTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	collector := NewCollector()
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
+	c := collector.NewCollector()
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
 			Name: "Test",
-			Steps: []StepConfig{
+			Steps: []config.StepConfig{
 				{Name: "step1", Method: "GET", URL: server.URL},
 				{Name: "step2", Method: "GET", URL: server.URL}, // This will fail
 				{Name: "step3", Method: "GET", URL: server.URL}, // Should still run
@@ -401,8 +411,8 @@ func TestHTTPWorkflow_ContinuesAfterHTTPError(t *testing.T) {
 		Client: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	err := workflow.Run(context.Background(), 1, nil, collector)
-	collector.Close()
+	err := workflow.Run(context.Background(), 1, nil, c)
+	c.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -412,18 +422,57 @@ func TestHTTPWorkflow_ContinuesAfterHTTPError(t *testing.T) {
 	if requestCount.Load() != 3 {
 		t.Errorf("expected 3 requests, got %d", requestCount.Load())
 	}
-	if len(collector.events) != 3 {
-		t.Errorf("expected 3 events, got %d", len(collector.events))
+	events := c.Events()
+	if len(events) != 3 {
+		t.Errorf("expected 3 events, got %d", len(events))
 	}
 
 	// Check success/failure pattern
-	if !collector.events[0].Success {
+	if !events[0].Success {
 		t.Error("step1 should be successful")
 	}
-	if collector.events[1].Success {
+	if events[1].Success {
 		t.Error("step2 should be unsuccessful")
 	}
-	if !collector.events[2].Success {
+	if !events[2].Success {
 		t.Error("step3 should be successful")
+	}
+}
+
+func TestHTTPWorkflow_VerboseMode(t *testing.T) {
+	// Create test server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	var debugBuf core.MockWriter
+	c := collector.NewCollector()
+	defer c.Close()
+
+	workflow := &Workflow{
+		Config: config.WorkflowConfig{
+			Name: "Test",
+			Steps: []config.StepConfig{
+				{Name: "health", Method: "GET", URL: server.URL + "/health"},
+			},
+		},
+		Client: &http.Client{Timeout: 5 * time.Second},
+		Debug:  NewDebugLogger(&debugBuf),
+	}
+
+	ctx := context.Background()
+	err := workflow.Run(ctx, 1, nil, c)
+	if err != nil {
+		t.Fatalf("workflow failed: %v", err)
+	}
+
+	output := debugBuf.String()
+
+	// Should log request
+	if output == "" {
+		t.Error("expected debug output, got empty string")
 	}
 }

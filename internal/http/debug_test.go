@@ -1,10 +1,8 @@
-package burstsmith
+package http
 
 import (
 	"bytes"
-	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -122,8 +120,8 @@ func TestDebugLogger_TruncatesLongBodies(t *testing.T) {
 	output := buf.String()
 
 	// Should be truncated and indicate truncation
-	if len(output) > 1500 && !strings.Contains(output, "...") && !strings.Contains(output, "truncated") {
-		t.Errorf("expected long body to be truncated")
+	if !strings.Contains(output, "truncated") {
+		t.Errorf("expected long body to be truncated, got: %s", output)
 	}
 }
 
@@ -137,48 +135,36 @@ func TestDebugLogger_NilLogger(t *testing.T) {
 	logger.LogError(1, "test", "error", time.Millisecond)
 }
 
-func TestHTTPWorkflow_VerboseMode(t *testing.T) {
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
-	}))
-	defer server.Close()
+func TestDebugLogger_EmptyBody(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewDebugLogger(&buf)
 
-	var debugBuf bytes.Buffer
-	collector := NewCollector()
-	defer collector.Close()
+	req, _ := http.NewRequest("GET", "http://example.com/api", nil)
+	logger.LogRequest(1, "test", req)
 
-	workflow := &HTTPWorkflow{
-		Config: WorkflowConfig{
-			Name: "Test",
-			Steps: []StepConfig{
-				{Name: "health", Method: "GET", URL: server.URL + "/health"},
-			},
-		},
-		Client: &http.Client{Timeout: 5 * time.Second},
-		Debug:  NewDebugLogger(&debugBuf),
-	}
+	output := buf.String()
 
-	ctx := context.Background()
-	err := workflow.Run(ctx, 1, nil, collector)
-	if err != nil {
-		t.Fatalf("workflow failed: %v", err)
-	}
-
-	output := debugBuf.String()
-
-	// Should log request
+	// Should contain request info but no body
 	if !strings.Contains(output, "GET") {
-		t.Errorf("expected request method in debug output, got: %s", output)
+		t.Errorf("expected method in output, got: %s", output)
 	}
-	if !strings.Contains(output, "/health") {
-		t.Errorf("expected request path in debug output, got: %s", output)
+}
+
+func TestDebugLogger_ResponseWithNoBody(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewDebugLogger(&buf)
+
+	resp := &http.Response{
+		StatusCode: 204,
+		Status:     "204 No Content",
+		Header:     http.Header{},
 	}
 
-	// Should log response
-	if !strings.Contains(output, "200") {
-		t.Errorf("expected response status in debug output, got: %s", output)
+	logger.LogResponse(1, "delete_user", resp, nil, 100*time.Millisecond)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "204") {
+		t.Errorf("expected status code in output, got: %s", output)
 	}
 }

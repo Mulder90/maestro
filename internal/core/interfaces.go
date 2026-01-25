@@ -1,4 +1,5 @@
-package burstsmith
+// Package core defines the fundamental interfaces and types for BurstSmith.
+package core
 
 import (
 	"context"
@@ -7,12 +8,16 @@ import (
 
 // Event represents a single measurement from an actor's workflow step.
 type Event struct {
-	ActorID   int
-	Timestamp time.Time
-	Step      string
-	Duration  time.Duration
-	Success   bool
-	Error     string
+	ActorID    int
+	Timestamp  time.Time
+	Step       string
+	Protocol   string        // "http", "grpc", "websocket"
+	Duration   time.Duration
+	Success    bool
+	Error      string
+	StatusCode int   // Protocol-specific status (HTTP 200, gRPC 0=OK)
+	BytesSent  int64 // Request size for throughput metrics
+	BytesRecv  int64 // Response size for throughput metrics
 }
 
 // Workflow defines a user journey that an actor executes.

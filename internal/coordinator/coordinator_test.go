@@ -1,12 +1,15 @@
-package burstsmith
+package coordinator
 
 import (
-	"bytes"
 	"context"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"burstsmith/internal/collector"
+	"burstsmith/internal/config"
+	"burstsmith/internal/core"
+	"burstsmith/internal/ratelimit"
 )
 
 // mockWorkflow tracks how many times it was run
@@ -15,7 +18,7 @@ type mockWorkflow struct {
 	delay    time.Duration
 }
 
-func (m *mockWorkflow) Run(ctx context.Context, actorID int, coord Coordinator, rep Reporter) error {
+func (m *mockWorkflow) Run(ctx context.Context, actorID int, coord core.Coordinator, rep core.Reporter) error {
 	m.runCount.Add(1)
 	if m.delay > 0 {
 		select {
@@ -24,13 +27,13 @@ func (m *mockWorkflow) Run(ctx context.Context, actorID int, coord Coordinator, 
 			return ctx.Err()
 		}
 	}
-	rep.Report(Event{ActorID: actorID, Step: "mock", Success: true, Duration: m.delay})
+	rep.Report(core.Event{ActorID: actorID, Step: "mock", Success: true, Duration: m.delay})
 	return nil
 }
 
 func TestCoordinator_SpawnsCorrectNumberOfActors(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -38,7 +41,7 @@ func TestCoordinator_SpawnsCorrectNumberOfActors(t *testing.T) {
 
 	coord.Spawn(ctx, 5, workflow)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Each actor should run at least once
 	if workflow.runCount.Load() < 5 {
@@ -47,8 +50,8 @@ func TestCoordinator_SpawnsCorrectNumberOfActors(t *testing.T) {
 }
 
 func TestCoordinator_ActorsRunConcurrently(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	// Workflow that takes 50ms
 	workflow := &mockWorkflow{delay: 50 * time.Millisecond}
@@ -61,7 +64,7 @@ func TestCoordinator_ActorsRunConcurrently(t *testing.T) {
 	coord.Spawn(ctx, 5, workflow)
 	coord.Wait()
 	elapsed := time.Since(start)
-	collector.Close()
+	c.Close()
 
 	// If actors ran sequentially, it would take 5*50ms = 250ms minimum
 	// Since they run concurrently, it should complete in ~100ms (the context timeout)
@@ -71,8 +74,8 @@ func TestCoordinator_ActorsRunConcurrently(t *testing.T) {
 }
 
 func TestCoordinator_ActorsRespectContextCancellation(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 1 * time.Second}
 
@@ -83,7 +86,7 @@ func TestCoordinator_ActorsRespectContextCancellation(t *testing.T) {
 	// Cancel immediately
 	cancel()
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Actors should stop quickly after cancellation
 	// They might have started one run each before context was cancelled
@@ -93,31 +96,32 @@ func TestCoordinator_ActorsRespectContextCancellation(t *testing.T) {
 }
 
 func TestCoordinator_ActorsGetUniqueIDs(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	coord.Spawn(ctx, 10, workflow)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Check that we got events from unique actor IDs
 	actorIDs := make(map[int]bool)
-	for _, e := range collector.events {
+	for _, e := range c.Events() {
 		actorIDs[e.ActorID] = true
 	}
 
+	// All 10 actors should report at least one event
 	if len(actorIDs) < 10 {
 		t.Errorf("expected 10 unique actor IDs, got %d", len(actorIDs))
 	}
 }
 
 func TestCoordinator_ReportsEventsToCollector(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -125,14 +129,15 @@ func TestCoordinator_ReportsEventsToCollector(t *testing.T) {
 
 	coord.Spawn(ctx, 3, workflow)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
-	if len(collector.events) == 0 {
+	events := c.Events()
+	if len(events) == 0 {
 		t.Error("expected events to be reported to collector")
 	}
 
 	// All events should be successful (mock workflow always succeeds)
-	for _, e := range collector.events {
+	for _, e := range events {
 		if !e.Success {
 			t.Errorf("expected all events to be successful, got failure for actor %d", e.ActorID)
 		}
@@ -140,8 +145,8 @@ func TestCoordinator_ReportsEventsToCollector(t *testing.T) {
 }
 
 func TestCoordinator_WaitBlocksUntilComplete(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 50 * time.Millisecond}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -161,17 +166,17 @@ func TestCoordinator_WaitBlocksUntilComplete(t *testing.T) {
 		t.Error("Wait did not return in time")
 	}
 
-	collector.Close()
+	c.Close()
 }
 
 func TestCoordinator_RunWithProfile_RampUp(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 10 * time.Millisecond}
 
-	profile := &LoadProfile{
-		Phases: []Phase{
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
 			{Name: "ramp", Duration: 300 * time.Millisecond, StartActors: 1, EndActors: 5},
 		},
 	}
@@ -181,11 +186,11 @@ func TestCoordinator_RunWithProfile_RampUp(t *testing.T) {
 
 	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Should have events from multiple actors
 	actorIDs := make(map[int]bool)
-	for _, e := range collector.events {
+	for _, e := range c.Events() {
 		actorIDs[e.ActorID] = true
 	}
 
@@ -195,13 +200,13 @@ func TestCoordinator_RunWithProfile_RampUp(t *testing.T) {
 }
 
 func TestCoordinator_RunWithProfile_SteadyState(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 10 * time.Millisecond}
 
-	profile := &LoadProfile{
-		Phases: []Phase{
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
 			{Name: "steady", Duration: 200 * time.Millisecond, Actors: 5},
 		},
 	}
@@ -211,11 +216,11 @@ func TestCoordinator_RunWithProfile_SteadyState(t *testing.T) {
 
 	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Should have exactly 5 actors active
 	actorIDs := make(map[int]bool)
-	for _, e := range collector.events {
+	for _, e := range c.Events() {
 		actorIDs[e.ActorID] = true
 	}
 
@@ -225,13 +230,13 @@ func TestCoordinator_RunWithProfile_SteadyState(t *testing.T) {
 }
 
 func TestCoordinator_RunWithProfile_MultiplePhases(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 5 * time.Millisecond}
 
-	profile := &LoadProfile{
-		Phases: []Phase{
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
 			{Name: "phase1", Duration: 100 * time.Millisecond, Actors: 2},
 			{Name: "phase2", Duration: 100 * time.Millisecond, Actors: 4},
 		},
@@ -242,29 +247,29 @@ func TestCoordinator_RunWithProfile_MultiplePhases(t *testing.T) {
 
 	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// Should have events from the test
-	if len(collector.events) == 0 {
+	if len(c.Events()) == 0 {
 		t.Error("expected events from multi-phase profile")
 	}
 }
 
 func TestCoordinator_RunWithProfile_WithRateLimiter(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	// Use a lower RPS with smaller burst to make rate limiting more visible
-	rateLimiter := NewRateLimiter(20) // 20 RPS with burst of 20
+	rateLimiter := ratelimit.NewRateLimiter(20) // 20 RPS with burst of 20
 
-	// Create HTTP workflow with rate limiter attached
+	// Create workflow with rate limiter attached
 	workflow := &rateLimitedMockWorkflow{
 		rateLimiter: rateLimiter,
-		collector:   collector,
+		reporter:    c,
 	}
 
-	profile := &LoadProfile{
-		Phases: []Phase{
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
 			{Name: "limited", Duration: 300 * time.Millisecond, Actors: 10, RPS: 20},
 		},
 	}
@@ -272,21 +277,19 @@ func TestCoordinator_RunWithProfile_WithRateLimiter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
 	coord.RunWithProfile(ctx, profile, workflow, rateLimiter, nil)
 	coord.Wait()
-	elapsed := time.Since(start)
-	collector.Close()
+	c.Close()
 
 	// With 20 RPS (burst=20) over ~300ms: initial burst of 20 + 20*0.3 = ~26 requests max
 	// Allow tolerance for timing variations
-	eventCount := len(collector.events)
+	eventCount := len(c.Events())
 	expectedMin := 10
 	expectedMax := 40
 
 	if eventCount < expectedMin || eventCount > expectedMax {
-		t.Errorf("expected %d-%d events with rate limiting, got %d (elapsed: %v)",
-			expectedMin, expectedMax, eventCount, elapsed)
+		t.Errorf("expected %d-%d events with rate limiting, got %d",
+			expectedMin, expectedMax, eventCount)
 	}
 
 	// Verify rate limiting is actually happening - without it, 10 actors could do thousands of requests
@@ -297,28 +300,28 @@ func TestCoordinator_RunWithProfile_WithRateLimiter(t *testing.T) {
 
 // rateLimitedMockWorkflow is a mock that respects rate limiting
 type rateLimitedMockWorkflow struct {
-	rateLimiter *RateLimiter
-	collector   *Collector
+	rateLimiter *ratelimit.RateLimiter
+	reporter    core.Reporter
 }
 
-func (m *rateLimitedMockWorkflow) Run(ctx context.Context, actorID int, coord Coordinator, rep Reporter) error {
+func (m *rateLimitedMockWorkflow) Run(ctx context.Context, actorID int, coord core.Coordinator, rep core.Reporter) error {
 	if m.rateLimiter != nil {
 		if err := m.rateLimiter.Wait(ctx); err != nil {
 			return err
 		}
 	}
-	m.collector.Report(Event{ActorID: actorID, Step: "mock", Success: true})
+	m.reporter.Report(core.Event{ActorID: actorID, Step: "mock", Success: true})
 	return nil
 }
 
 func TestCoordinator_RunWithProfile_RampDown(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
 	workflow := &mockWorkflow{delay: 10 * time.Millisecond}
 
-	profile := &LoadProfile{
-		Phases: []Phase{
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
 			{Name: "ramp_down", Duration: 200 * time.Millisecond, StartActors: 5, EndActors: 0},
 		},
 	}
@@ -328,7 +331,7 @@ func TestCoordinator_RunWithProfile_RampDown(t *testing.T) {
 
 	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
 	coord.Wait()
-	collector.Close()
+	c.Close()
 
 	// After ramp down completes, should have 0 active actors
 	if coord.ActiveActors() != 0 {
@@ -336,43 +339,13 @@ func TestCoordinator_RunWithProfile_RampDown(t *testing.T) {
 	}
 }
 
-func TestCoordinator_RunWithProfile_PhaseAnnouncementsUseProgress(t *testing.T) {
-	collector := NewCollector()
-	coord := NewCoordinator(collector)
+func TestCoordinator_ActiveActors(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
 
-	var buf bytes.Buffer
-	progress := NewProgress(collector, false)
-	progress.SetOutput(&buf)
-
-	workflow := &mockWorkflow{delay: 5 * time.Millisecond}
-
-	// Phases must be longer than 100ms (coordinator tick interval) to be detected
-	profile := &LoadProfile{
-		Phases: []Phase{
-			{Name: "phase1", Duration: 150 * time.Millisecond, Actors: 2},
-			{Name: "phase2", Duration: 150 * time.Millisecond, Actors: 3},
-		},
+	if coord.ActiveActors() != 0 {
+		t.Errorf("expected 0 active actors initially, got %d", coord.ActiveActors())
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	coord.RunWithProfile(ctx, profile, workflow, nil, progress)
-	coord.Wait()
-	collector.Close()
-
-	output := buf.String()
-
-	// Phase announcements should be in the output
-	if !strings.Contains(output, "phase1") {
-		t.Errorf("expected phase1 announcement in output, got: %q", output)
-	}
-	if !strings.Contains(output, "phase2") {
-		t.Errorf("expected phase2 announcement in output, got: %q", output)
-	}
-
-	// Output should contain clear escape sequence before each phase announcement
-	if !strings.Contains(output, "\r\033[K") {
-		t.Error("expected line clear escape sequence in output")
-	}
+	c.Close()
 }

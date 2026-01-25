@@ -1,12 +1,14 @@
-package burstsmith
+package ratelimit
 
 import (
 	"testing"
 	"time"
+
+	"burstsmith/internal/config"
 )
 
 func TestPhaseManager_SteadyPhase(t *testing.T) {
-	phases := []Phase{
+	phases := []config.Phase{
 		{Name: "steady", Duration: 1 * time.Second, Actors: 10},
 	}
 	pm := NewPhaseManager(phases)
@@ -23,13 +25,14 @@ func TestPhaseManager_SteadyPhase(t *testing.T) {
 	}
 
 	// Phase name should match
-	if pm.PhaseName() != "steady" {
-		t.Errorf("expected phase name 'steady', got %q", pm.PhaseName())
+	phase := pm.CurrentPhase()
+	if phase == nil || phase.Name != "steady" {
+		t.Errorf("expected phase name 'steady', got %v", phase)
 	}
 }
 
 func TestPhaseManager_RampPhase(t *testing.T) {
-	phases := []Phase{
+	phases := []config.Phase{
 		{Name: "ramp", Duration: 100 * time.Millisecond, StartActors: 0, EndActors: 10},
 	}
 	pm := NewPhaseManager(phases)
@@ -55,15 +58,16 @@ func TestPhaseManager_RampPhase(t *testing.T) {
 }
 
 func TestPhaseManager_MultiplePhases(t *testing.T) {
-	phases := []Phase{
+	phases := []config.Phase{
 		{Name: "first", Duration: 50 * time.Millisecond, Actors: 5},
 		{Name: "second", Duration: 50 * time.Millisecond, Actors: 10},
 	}
 	pm := NewPhaseManager(phases)
 
 	// In first phase
-	if pm.PhaseName() != "first" {
-		t.Errorf("expected phase 'first', got %q", pm.PhaseName())
+	phase := pm.CurrentPhase()
+	if phase == nil || phase.Name != "first" {
+		t.Errorf("expected phase 'first', got %v", phase)
 	}
 	if pm.TargetActors() != 5 {
 		t.Errorf("expected 5 actors, got %d", pm.TargetActors())
@@ -73,8 +77,9 @@ func TestPhaseManager_MultiplePhases(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 
 	// Now in second phase
-	if pm.PhaseName() != "second" {
-		t.Errorf("expected phase 'second', got %q", pm.PhaseName())
+	phase = pm.CurrentPhase()
+	if phase == nil || phase.Name != "second" {
+		t.Errorf("expected phase 'second', got %v", phase)
 	}
 	if pm.TargetActors() != 10 {
 		t.Errorf("expected 10 actors, got %d", pm.TargetActors())
@@ -82,7 +87,7 @@ func TestPhaseManager_MultiplePhases(t *testing.T) {
 }
 
 func TestPhaseManager_RPS(t *testing.T) {
-	phases := []Phase{
+	phases := []config.Phase{
 		{Name: "limited", Duration: 100 * time.Millisecond, Actors: 5, RPS: 100},
 	}
 	pm := NewPhaseManager(phases)
@@ -92,17 +97,43 @@ func TestPhaseManager_RPS(t *testing.T) {
 	}
 }
 
-func TestLoadProfile_TotalDuration(t *testing.T) {
-	lp := &LoadProfile{
-		Phases: []Phase{
-			{Duration: 10 * time.Second},
-			{Duration: 20 * time.Second},
-			{Duration: 5 * time.Second},
-		},
+func TestPhaseManager_IsComplete(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "short", Duration: 50 * time.Millisecond, Actors: 5},
+	}
+	pm := NewPhaseManager(phases)
+
+	if pm.IsComplete() {
+		t.Error("expected phase not to be complete initially")
 	}
 
-	expected := 35 * time.Second
-	if lp.TotalDuration() != expected {
-		t.Errorf("expected %v, got %v", expected, lp.TotalDuration())
+	time.Sleep(60 * time.Millisecond)
+
+	if !pm.IsComplete() {
+		t.Error("expected phase to be complete after duration")
+	}
+}
+
+func TestPhaseManager_CurrentPhaseIndex(t *testing.T) {
+	phases := []config.Phase{
+		{Name: "first", Duration: 50 * time.Millisecond, Actors: 5},
+		{Name: "second", Duration: 50 * time.Millisecond, Actors: 10},
+	}
+	pm := NewPhaseManager(phases)
+
+	if pm.CurrentPhaseIndex() != 0 {
+		t.Errorf("expected phase index 0, got %d", pm.CurrentPhaseIndex())
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	if pm.CurrentPhaseIndex() != 1 {
+		t.Errorf("expected phase index 1, got %d", pm.CurrentPhaseIndex())
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	if pm.CurrentPhaseIndex() != 2 {
+		t.Errorf("expected phase index 2 (complete), got %d", pm.CurrentPhaseIndex())
 	}
 }

@@ -1,4 +1,4 @@
-package burstsmith
+package config
 
 import (
 	"os"
@@ -244,6 +244,21 @@ func TestLoadProfile_TotalDuration_Single(t *testing.T) {
 	}
 	if lp.TotalDuration() != 30*time.Second {
 		t.Errorf("expected 30s, got %v", lp.TotalDuration())
+	}
+}
+
+func TestLoadProfile_TotalDuration_Multiple(t *testing.T) {
+	lp := &LoadProfile{
+		Phases: []Phase{
+			{Duration: 10 * time.Second},
+			{Duration: 20 * time.Second},
+			{Duration: 5 * time.Second},
+		},
+	}
+
+	expected := 35 * time.Second
+	if lp.TotalDuration() != expected {
+		t.Errorf("expected %v, got %v", expected, lp.TotalDuration())
 	}
 }
 

@@ -14,6 +14,7 @@ BurstSmith is a functional HTTP load testing tool with:
 - Graceful shutdown
 - Local test server for offline testing
 - Verbose mode for request/response debugging
+- **Step interface for multi-protocol extensibility**
 
 ## Production Readiness Gaps
 
@@ -201,18 +202,19 @@ Focus: Make HTTP testing production-ready
    - [x] Graceful shutdown
    - [x] Local test server (bonus)
 
-### Phase 2: Extensibility (v1.5)
+### Phase 2: Extensibility (v1.5) ✅
 Focus: Prepare architecture for multi-protocol
 
-1. **Refactor to Step interface**
-   - Extract step execution from HTTPWorkflow
-   - Create StepExecutor abstraction
-   - Plugin-style protocol registration
+1. **Refactor to Step interface** ✅
+   - [x] Extract step execution from HTTPWorkflow → `HTTPStep` in `http_step.go`
+   - [x] Create Step interface with `Execute()` and `Name()` → `step.go`
+   - [x] Add Variables interface for state sharing between steps
+   - [x] Update Event struct with Protocol, StatusCode, BytesSent, BytesRecv
 
 2. **Enhanced data handling**
-   - CSV data files
-   - Request/response logging
-   - Assertions framework
+   - [ ] CSV data files
+   - [x] Request/response logging (verbose mode)
+   - [ ] Assertions framework
 
 ### Phase 3: Multi-Protocol (v2.0)
 Focus: Add additional protocols

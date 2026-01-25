@@ -1,4 +1,4 @@
-package burstsmith
+package collector
 
 import (
 	"testing"
@@ -189,46 +189,6 @@ func TestThresholds_ZeroThresholdNotChecked(t *testing.T) {
 	}
 }
 
-func TestParsePercentage_ValidFormats(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected float64
-	}{
-		{"1%", 1.0},
-		{"0.5%", 0.5},
-		{"99.9%", 99.9},
-		{"0%", 0.0},
-		{"  5%  ", 5.0}, // with whitespace
-	}
-
-	for _, tt := range tests {
-		result, err := parsePercentage(tt.input)
-		if err != nil {
-			t.Errorf("unexpected error for %q: %v", tt.input, err)
-			continue
-		}
-		if result != tt.expected {
-			t.Errorf("parsePercentage(%q): expected %v, got %v", tt.input, tt.expected, result)
-		}
-	}
-}
-
-func TestParsePercentage_InvalidFormats(t *testing.T) {
-	invalidInputs := []string{
-		"1",      // no percent sign
-		"1%%",    // double percent
-		"abc%",   // not a number
-		"",       // empty
-	}
-
-	for _, input := range invalidInputs {
-		_, err := parsePercentage(input)
-		if err == nil {
-			t.Errorf("expected error for invalid input %q", input)
-		}
-	}
-}
-
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		input    time.Duration
@@ -241,9 +201,9 @@ func TestFormatDuration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := formatDuration(tt.input)
+		result := FormatDuration(tt.input)
 		if result != tt.expected {
-			t.Errorf("formatDuration(%v): expected %q, got %q", tt.input, tt.expected, result)
+			t.Errorf("FormatDuration(%v): expected %q, got %q", tt.input, tt.expected, result)
 		}
 	}
 }

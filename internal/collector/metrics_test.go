@@ -1,4 +1,4 @@
-package burstsmith
+package collector
 
 import (
 	"testing"

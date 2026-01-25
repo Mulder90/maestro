@@ -1,4 +1,5 @@
-package burstsmith
+// Package collector aggregates events and computes metrics.
+package collector
 
 import (
 	"encoding/json"
@@ -7,12 +8,14 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"burstsmith/internal/core"
 )
 
 // Collector aggregates events from actors and produces a summary.
 type Collector struct {
-	events    []Event
-	ch        chan Event
+	events    []core.Event
+	ch        chan core.Event
 	done      chan struct{}
 	mu        sync.Mutex
 	startTime time.Time
@@ -22,8 +25,8 @@ type Collector struct {
 // NewCollector creates a new Collector and starts its collection goroutine.
 func NewCollector() *Collector {
 	c := &Collector{
-		events:    make([]Event, 0),
-		ch:        make(chan Event, 1000),
+		events:    make([]core.Event, 0),
+		ch:        make(chan core.Event, 1000),
 		done:      make(chan struct{}),
 		startTime: time.Now(),
 	}
@@ -31,7 +34,6 @@ func NewCollector() *Collector {
 	return c
 }
 
-// collect runs in a goroutine, receiving events until the channel is closed.
 func (c *Collector) collect() {
 	for event := range c.ch {
 		c.mu.Lock()
@@ -42,11 +44,10 @@ func (c *Collector) collect() {
 }
 
 // Report sends an event to the collector. Thread-safe.
-func (c *Collector) Report(event Event) {
+func (c *Collector) Report(event core.Event) {
 	select {
 	case c.ch <- event:
 	default:
-		// Channel full, drop event (could log this in production)
 	}
 }
 
@@ -55,6 +56,15 @@ func (c *Collector) Close() {
 	c.endTime = time.Now()
 	close(c.ch)
 	<-c.done
+}
+
+// Events returns a copy of collected events (for testing).
+func (c *Collector) Events() []core.Event {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make([]core.Event, len(c.events))
+	copy(result, c.events)
+	return result
 }
 
 // Compute calculates metrics from all collected events.
@@ -70,14 +80,12 @@ func (c *Collector) Compute() *Metrics {
 		return m
 	}
 
-	// Calculate test duration
 	if !c.endTime.IsZero() {
 		m.TestDuration = c.endTime.Sub(c.startTime)
 	} else {
 		m.TestDuration = time.Since(c.startTime)
 	}
 
-	// Collect all durations and per-step data
 	allDurations := make([]time.Duration, 0, len(c.events))
 	stepDurations := make(map[string][]time.Duration)
 
@@ -91,7 +99,6 @@ func (c *Collector) Compute() *Metrics {
 
 		allDurations = append(allDurations, e.Duration)
 
-		// Initialize step metrics if needed
 		if _, exists := m.Steps[e.Step]; !exists {
 			m.Steps[e.Step] = &StepMetrics{}
 			stepDurations[e.Step] = make([]time.Duration, 0)
@@ -107,20 +114,16 @@ func (c *Collector) Compute() *Metrics {
 		stepDurations[e.Step] = append(stepDurations[e.Step], e.Duration)
 	}
 
-	// Calculate success rate
 	if m.TotalRequests > 0 {
 		m.SuccessRate = float64(m.SuccessCount) / float64(m.TotalRequests) * 100
 	}
 
-	// Calculate requests per second
 	if m.TestDuration > 0 {
 		m.RequestsPerSec = float64(m.TotalRequests) / m.TestDuration.Seconds()
 	}
 
-	// Compute overall duration metrics
 	m.Duration = ComputeDurationMetrics(allDurations)
 
-	// Compute per-step duration metrics
 	for step, durations := range stepDurations {
 		m.Steps[step].Duration = ComputeDurationMetrics(durations)
 	}
@@ -128,7 +131,7 @@ func (c *Collector) Compute() *Metrics {
 	return m
 }
 
-// Summary computes and prints aggregated statistics (legacy method).
+// Summary computes and prints aggregated statistics.
 func (c *Collector) Summary() {
 	m := c.Compute()
 	c.PrintText(os.Stdout, m, nil)
@@ -148,31 +151,27 @@ func (c *Collector) PrintText(w io.Writer, m *Metrics, thresholds *ThresholdResu
 	fmt.Fprintf(w, "Duration:       %v\n", m.TestDuration.Round(time.Millisecond))
 	fmt.Fprintf(w, "Total Requests: %s\n", formatNumber(m.TotalRequests))
 	fmt.Fprintf(w, "Success Rate:   %.1f%% (%s / %s)\n",
-		m.SuccessRate,
-		formatNumber(m.SuccessCount),
-		formatNumber(m.TotalRequests))
+		m.SuccessRate, formatNumber(m.SuccessCount), formatNumber(m.TotalRequests))
 	fmt.Fprintf(w, "Requests/sec:   %.1f\n", m.RequestsPerSec)
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Response Times:")
-	fmt.Fprintf(w, "  Min:    %s\n", formatDuration(m.Duration.Min))
-	fmt.Fprintf(w, "  Avg:    %s\n", formatDuration(m.Duration.Avg))
-	fmt.Fprintf(w, "  P50:    %s\n", formatDuration(m.Duration.P50))
-	fmt.Fprintf(w, "  P90:    %s\n", formatDuration(m.Duration.P90))
-	fmt.Fprintf(w, "  P95:    %s\n", formatDuration(m.Duration.P95))
-	fmt.Fprintf(w, "  P99:    %s\n", formatDuration(m.Duration.P99))
-	fmt.Fprintf(w, "  Max:    %s\n", formatDuration(m.Duration.Max))
+	fmt.Fprintf(w, "  Min:    %s\n", FormatDuration(m.Duration.Min))
+	fmt.Fprintf(w, "  Avg:    %s\n", FormatDuration(m.Duration.Avg))
+	fmt.Fprintf(w, "  P50:    %s\n", FormatDuration(m.Duration.P50))
+	fmt.Fprintf(w, "  P90:    %s\n", FormatDuration(m.Duration.P90))
+	fmt.Fprintf(w, "  P95:    %s\n", FormatDuration(m.Duration.P95))
+	fmt.Fprintf(w, "  P99:    %s\n", FormatDuration(m.Duration.P99))
+	fmt.Fprintf(w, "  Max:    %s\n", FormatDuration(m.Duration.Max))
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "By Step:")
 	for step, sm := range m.Steps {
 		fmt.Fprintf(w, "  %-15s %s reqs   avg=%s  p95=%s  p99=%s\n",
-			step,
-			formatNumber(sm.Count),
-			formatDuration(sm.Duration.Avg),
-			formatDuration(sm.Duration.P95),
-			formatDuration(sm.Duration.P99))
+			step, formatNumber(sm.Count),
+			FormatDuration(sm.Duration.Avg),
+			FormatDuration(sm.Duration.P95),
+			FormatDuration(sm.Duration.P99))
 	}
 
-	// Print threshold results if provided
 	if thresholds != nil && len(thresholds.Results) > 0 {
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "Thresholds:")
@@ -190,15 +189,15 @@ func (c *Collector) PrintText(w io.Writer, m *Metrics, thresholds *ThresholdResu
 // PrintJSON outputs metrics in JSON format.
 func (c *Collector) PrintJSON(w io.Writer, m *Metrics, thresholds *ThresholdResults) {
 	output := struct {
-		Duration       string                  `json:"duration"`
-		TotalRequests  int                     `json:"totalRequests"`
-		SuccessCount   int                     `json:"successCount"`
-		FailureCount   int                     `json:"failureCount"`
-		SuccessRate    float64                 `json:"successRate"`
-		RequestsPerSec float64                 `json:"requestsPerSec"`
-		Durations      jsonDurationMetrics     `json:"durations"`
+		Duration       string                     `json:"duration"`
+		TotalRequests  int                        `json:"totalRequests"`
+		SuccessCount   int                        `json:"successCount"`
+		FailureCount   int                        `json:"failureCount"`
+		SuccessRate    float64                    `json:"successRate"`
+		RequestsPerSec float64                    `json:"requestsPerSec"`
+		Durations      jsonDurationMetrics        `json:"durations"`
 		Steps          map[string]jsonStepMetrics `json:"steps"`
-		Thresholds     *ThresholdResults       `json:"thresholds,omitempty"`
+		Thresholds     *ThresholdResults          `json:"thresholds,omitempty"`
 	}{
 		Duration:       m.TestDuration.Round(time.Millisecond).String(),
 		TotalRequests:  m.TotalRequests,
@@ -226,7 +225,6 @@ func (c *Collector) PrintJSON(w io.Writer, m *Metrics, thresholds *ThresholdResu
 	encoder.Encode(output)
 }
 
-// jsonDurationMetrics is used for JSON serialization with string durations.
 type jsonDurationMetrics struct {
 	Min string `json:"min"`
 	Max string `json:"max"`
@@ -247,17 +245,16 @@ type jsonStepMetrics struct {
 
 func toJSONDurationMetrics(d DurationMetrics) jsonDurationMetrics {
 	return jsonDurationMetrics{
-		Min: formatDuration(d.Min),
-		Max: formatDuration(d.Max),
-		Avg: formatDuration(d.Avg),
-		P50: formatDuration(d.P50),
-		P90: formatDuration(d.P90),
-		P95: formatDuration(d.P95),
-		P99: formatDuration(d.P99),
+		Min: FormatDuration(d.Min),
+		Max: FormatDuration(d.Max),
+		Avg: FormatDuration(d.Avg),
+		P50: FormatDuration(d.P50),
+		P90: FormatDuration(d.P90),
+		P95: FormatDuration(d.P95),
+		P99: FormatDuration(d.P99),
 	}
 }
 
-// formatNumber adds commas to large numbers.
 func formatNumber(n int) string {
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
