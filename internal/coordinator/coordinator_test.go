@@ -349,3 +349,157 @@ func TestCoordinator_ActiveActors(t *testing.T) {
 
 	c.Close()
 }
+
+func TestCoordinator_StopActors_ViaRampDown(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{delay: 20 * time.Millisecond}
+
+	// Test stopActors through a ramp-down profile which naturally calls it
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
+			// Start with 10 actors, ramp down to 0
+			{Name: "ramp_down", Duration: 200 * time.Millisecond, StartActors: 10, EndActors: 0},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
+	coord.Wait()
+	c.Close()
+
+	// After ramp down, should have 0 active actors
+	finalActors := coord.ActiveActors()
+	if finalActors != 0 {
+		t.Errorf("expected 0 active actors after ramp down, got %d", finalActors)
+	}
+
+	// Should have had multiple actors reporting events during the ramp
+	actorIDs := make(map[int]bool)
+	for _, e := range c.Events() {
+		actorIDs[e.ActorID] = true
+	}
+	if len(actorIDs) < 3 {
+		t.Errorf("expected multiple actors to run during ramp down, got %d unique actors", len(actorIDs))
+	}
+}
+
+func TestCoordinator_StopActors_PhaseTransition(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{delay: 10 * time.Millisecond}
+
+	// Two phases: start with 5 actors, drop to 2
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
+			{Name: "high", Duration: 150 * time.Millisecond, Actors: 5},
+			{Name: "low", Duration: 150 * time.Millisecond, Actors: 2},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
+	coord.Wait()
+	c.Close()
+
+	// After profile completes, should have 0 actors
+	if coord.ActiveActors() != 0 {
+		t.Errorf("expected 0 actors after profile complete, got %d", coord.ActiveActors())
+	}
+
+	// Should have events from both phases
+	if len(c.Events()) == 0 {
+		t.Error("expected events from phase transitions")
+	}
+}
+
+func TestCoordinator_StopActors_EmptyStopChans(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	// stopActors on empty coordinator should not panic
+	coord.stopActors(5) // No actors to stop
+
+	// Should still work normally after
+	if coord.ActiveActors() != 0 {
+		t.Errorf("expected 0 actors, got %d", coord.ActiveActors())
+	}
+
+	c.Close()
+}
+
+func TestCoordinator_RunWithProfile_NoRPS(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{delay: 5 * time.Millisecond}
+
+	// Phase without RPS (should use different message format)
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
+			{Name: "no_rps", Duration: 200 * time.Millisecond, Actors: 3},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	// Run without progress (nil) to exercise the fmt.Printf path
+	coord.RunWithProfile(ctx, profile, workflow, nil, nil)
+	coord.Wait()
+	c.Close()
+
+	// Should have events from the test
+	if len(c.Events()) == 0 {
+		t.Error("expected events from profile without RPS")
+	}
+}
+
+func TestCoordinator_RunWithProfile_ContextCancellation(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{delay: 50 * time.Millisecond}
+
+	profile := &config.LoadProfile{
+		Phases: []config.Phase{
+			{Name: "long", Duration: 10 * time.Second, Actors: 5},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		coord.RunWithProfile(ctx, profile, workflow, nil, nil)
+		close(done)
+	}()
+
+	// Wait for actors to start
+	time.Sleep(150 * time.Millisecond)
+
+	// Cancel context
+	cancel()
+
+	// Should return quickly after cancellation
+	select {
+	case <-done:
+		// Good
+	case <-time.After(500 * time.Millisecond):
+		t.Error("RunWithProfile did not stop after context cancellation")
+	}
+
+	coord.Wait()
+	c.Close()
+
+	// All actors should be stopped
+	if coord.ActiveActors() != 0 {
+		t.Errorf("expected 0 actors after cancellation, got %d", coord.ActiveActors())
+	}
+}
