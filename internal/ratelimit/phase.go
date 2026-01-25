@@ -4,22 +4,31 @@ import (
 	"time"
 
 	"burstsmith/internal/config"
+	"burstsmith/internal/core"
 )
 
 type PhaseManager struct {
 	phases    []config.Phase
 	startTime time.Time
+	clock     core.Clock
 }
 
+// NewPhaseManager creates a PhaseManager with a real clock.
 func NewPhaseManager(phases []config.Phase) *PhaseManager {
+	return NewPhaseManagerWithClock(phases, core.RealClock{})
+}
+
+// NewPhaseManagerWithClock creates a PhaseManager with a custom clock (for testing).
+func NewPhaseManagerWithClock(phases []config.Phase, clock core.Clock) *PhaseManager {
 	return &PhaseManager{
 		phases:    phases,
-		startTime: time.Now(),
+		startTime: clock.Now(),
+		clock:     clock,
 	}
 }
 
 func (pm *PhaseManager) Elapsed() time.Duration {
-	return time.Since(pm.startTime)
+	return pm.clock.Since(pm.startTime)
 }
 
 func (pm *PhaseManager) CurrentPhaseIndex() int {
