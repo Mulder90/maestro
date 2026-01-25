@@ -50,3 +50,6 @@ build/
 tmp/
 temp/
 *.tmp
+
+# Claude Code
+.claude/
