@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -388,16 +389,19 @@ workflow:
 }
 
 func TestIntegration_HeadersAndBody(t *testing.T) {
+	var mu sync.Mutex
 	var receivedContentType string
 	var receivedAuth string
 	var receivedBody string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		receivedContentType = r.Header.Get("Content-Type")
 		receivedAuth = r.Header.Get("Authorization")
 		buf := make([]byte, 1024)
 		n, _ := r.Body.Read(buf)
 		receivedBody = string(buf[:n])
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -437,14 +441,20 @@ workflow:
 	coord.Wait()
 	c.Close()
 
-	if receivedContentType != "application/json" {
-		t.Errorf("expected Content-Type header, got %q", receivedContentType)
+	mu.Lock()
+	ct := receivedContentType
+	auth := receivedAuth
+	body := receivedBody
+	mu.Unlock()
+
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type header, got %q", ct)
 	}
-	if receivedAuth != "Bearer secret-token" {
-		t.Errorf("expected Authorization header, got %q", receivedAuth)
+	if auth != "Bearer secret-token" {
+		t.Errorf("expected Authorization header, got %q", auth)
 	}
-	if receivedBody != `{"name": "test", "value": 123}` {
-		t.Errorf("expected body, got %q", receivedBody)
+	if body != `{"name": "test", "value": 123}` {
+		t.Errorf("expected body, got %q", body)
 	}
 }
 

@@ -34,6 +34,7 @@ burstsmith --config=<path> [options]
 | `--duration` | 10s | Test duration (e.g., 30s, 1m, 5m) |
 | `--output` | text | Output format: `text` or `json` |
 | `--quiet` | false | Suppress progress output during test |
+| `--verbose` | false | Enable debug output (request/response logging) |
 
 ### Exit Codes
 
@@ -281,9 +282,6 @@ burstsmith --config=examples/workflows/multi-endpoint.yaml --actors=3 --duration
 
 ### Stress Tests
 ```bash
-# Maximum throughput
-burstsmith --config=examples/stress/rapid-fire.yaml --actors=10 --duration=30s
-
 # Large payload
 burstsmith --config=examples/stress/large-payload.yaml --actors=5 --duration=10s
 ```

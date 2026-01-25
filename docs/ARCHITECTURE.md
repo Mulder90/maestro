@@ -42,7 +42,7 @@ BurstSmith executes HTTP workflows with configurable concurrency patterns. It su
 
 ## Components
 
-### Core Types (`burstsmith.go`)
+### Core Types (`internal/core/interfaces.go`)
 
 ```go
 type Event struct {
@@ -71,12 +71,13 @@ type Reporter interface {
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| **Config** | `config.go` | Parse YAML config files, load profiles |
-| **Coordinator** | `coordinator.go` | Spawn/terminate actors, manage lifecycle |
-| **Collector** | `collector.go` | Aggregate events, compute statistics |
-| **HTTPWorkflow** | `http_workflow.go` | Execute HTTP request sequences |
-| **PhaseManager** | `phase_manager.go` | Track phases, calculate target actor count |
-| **RateLimiter** | `rate_limiter.go` | Token bucket rate limiting |
+| **Config** | `internal/config/config.go` | Parse YAML config files, load profiles |
+| **Coordinator** | `internal/coordinator/coordinator.go` | Spawn/terminate actors, manage lifecycle |
+| **Collector** | `internal/collector/collector.go` | Aggregate events, compute statistics |
+| **HTTPWorkflow** | `internal/http/workflow.go` | Execute HTTP request sequences |
+| **PhaseManager** | `internal/ratelimit/phase.go` | Track phases, calculate target actor count |
+| **RateLimiter** | `internal/ratelimit/limiter.go` | Token bucket rate limiting |
+| **Progress** | `internal/progress/progress.go` | Real-time progress display |
 
 ## Execution Modes
 
@@ -211,23 +212,45 @@ spawnWithStop() ──▶ goroutine starts ──▶ workflow.Run() loop
 
 ```
 burstsmith/
-├── cmd/burstsmith/
-│   └── main.go              # CLI entry point, flag parsing, wiring
+├── cmd/
+│   ├── burstsmith/
+│   │   └── main.go              # CLI entry point, flag parsing, wiring
+│   └── testserver/
+│       └── main.go              # Test server CLI
+├── internal/
+│   ├── collector/
+│   │   ├── collector.go         # Event aggregation and summary
+│   │   ├── metrics.go           # Metrics computation (percentiles)
+│   │   └── thresholds.go        # Threshold checking
+│   ├── config/
+│   │   └── config.go            # YAML config parsing
+│   ├── coordinator/
+│   │   └── coordinator.go       # Actor spawning and lifecycle
+│   ├── core/
+│   │   ├── interfaces.go        # Core interfaces (Workflow, Reporter, etc.)
+│   │   └── step.go              # Step interface for multi-protocol support
+│   ├── http/
+│   │   ├── workflow.go          # HTTP workflow execution
+│   │   ├── step.go              # HTTP step implementation
+│   │   └── debug.go             # Request/response debugging
+│   ├── progress/
+│   │   └── progress.go          # Real-time progress display
+│   └── ratelimit/
+│       ├── limiter.go           # Token bucket rate limiter
+│       └── phase.go             # Load profile phase management
+├── testserver/
+│   └── server.go                # Configurable test server
 ├── docs/
-│   └── ARCHITECTURE.md      # This file
+│   ├── ARCHITECTURE.md          # This file
+│   └── ROADMAP.md               # Future plans
 ├── examples/
-│   ├── simple/              # Basic workflow examples
-│   ├── workflows/           # Multi-step workflow examples
-│   ├── stress/              # High-load examples
-│   └── profiles/            # Load profile examples
-├── burstsmith.go            # Core interfaces and Event type
-├── config.go                # YAML config parsing
-├── coordinator.go           # Actor spawning and lifecycle
-├── collector.go             # Event aggregation and summary
-├── http_workflow.go         # HTTP request execution
-├── phase_manager.go         # Load profile phase tracking
-├── rate_limiter.go          # Token bucket rate limiter
-├── *_test.go                # Test files
+│   ├── simple/                  # Basic workflow examples
+│   ├── workflows/               # Multi-step workflow examples
+│   ├── stress/                  # High-load examples
+│   ├── profiles/                # Load profile examples
+│   ├── thresholds/              # Threshold examples
+│   └── local/                   # Local test server examples
+├── integration_test.go          # Integration tests
 ├── go.mod
 └── README.md
 ```

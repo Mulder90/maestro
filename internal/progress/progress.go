@@ -67,7 +67,7 @@ func (p *Progress) printProgress() {
 		errorRate = float64(m.FailureCount) / float64(m.TotalRequests) * 100
 	}
 	p.mu.Lock()
-	fmt.Fprintf(p.output, "\033[K[%02d:%02d] Requests: %d | RPS: %.1f | Errors: %d (%.1f%%)",
+	fmt.Fprintf(p.output, "\r\033[K[%02d:%02d] Requests: %d | RPS: %.1f | Errors: %d (%.1f%%)",
 		mins, secs, m.TotalRequests, m.RequestsPerSec, m.FailureCount, errorRate)
 	p.mu.Unlock()
 }
@@ -83,7 +83,7 @@ func (p *Progress) Stop() {
 		close(p.stopCh)
 	}
 	p.mu.Lock()
-	fmt.Fprintf(p.output, "\033[K")
+	fmt.Fprintf(p.output, "\r\033[K")
 	p.mu.Unlock()
 }
 
