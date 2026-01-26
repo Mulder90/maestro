@@ -13,6 +13,7 @@ import (
 	"maestro/internal/collector"
 	"maestro/internal/config"
 	"maestro/internal/coordinator"
+	"maestro/internal/core"
 	httpworkflow "maestro/internal/http"
 	"maestro/internal/progress"
 	"maestro/internal/ratelimit"
@@ -31,6 +32,8 @@ func main() {
 	output := flag.String("output", "text", "output format: text, json")
 	quiet := flag.Bool("quiet", false, "suppress progress output during test")
 	verbose := flag.Bool("verbose", false, "enable debug output (request/response logging)")
+	maxIterations := flag.Int("max-iterations", 0, "max iterations per actor (0 = unlimited)")
+	warmup := flag.Int("warmup", 0, "warmup iterations before collecting metrics (per-actor)")
 	flag.Parse()
 
 	if *configPath == "" {
@@ -82,10 +85,22 @@ func main() {
 
 	prog := progress.NewProgress(coll, *quiet)
 
+	// Build RunnerConfig: CLI flags override config file values
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: cfg.Execution.MaxIterations,
+		WarmupIters:   cfg.Execution.WarmupIterations,
+	}
+	if *maxIterations > 0 {
+		runnerConfig.MaxIterations = *maxIterations
+	}
+	if *warmup > 0 {
+		runnerConfig.WarmupIters = *warmup
+	}
+
 	if cfg.LoadProfile != nil && len(cfg.LoadProfile.Phases) > 0 {
-		runWithProfile(ctx, cfg, coord, workflow, coll, prog)
+		runWithProfile(ctx, cfg, coord, workflow, coll, prog, runnerConfig)
 	} else {
-		runClassic(ctx, cfg, coord, workflow, coll, prog, *actors, *duration)
+		runClassic(ctx, cfg, coord, workflow, coll, prog, *actors, *duration, runnerConfig)
 	}
 
 	prog.Stop()
@@ -117,7 +132,7 @@ func main() {
 	os.Exit(ExitSuccess)
 }
 
-func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress, actors int, duration time.Duration) {
+func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress, actors int, duration time.Duration, runnerConfig core.RunnerConfig) {
 	if actors < 1 {
 		fmt.Fprintln(os.Stderr, "error: --actors must be >= 1")
 		os.Exit(ExitError)
@@ -130,12 +145,17 @@ func runClassic(ctx context.Context, cfg *config.Config, coord *coordinator.Coor
 	defer cancel()
 
 	prog.Start()
-	coord.Spawn(ctx, actors, workflow)
+	// Use SpawnWithConfig if execution config is set, otherwise use regular Spawn
+	if runnerConfig.MaxIterations > 0 || runnerConfig.WarmupIters > 0 {
+		coord.SpawnWithConfig(ctx, actors, workflow, runnerConfig)
+	} else {
+		coord.Spawn(ctx, actors, workflow)
+	}
 	coord.Wait()
 	coll.Close()
 }
 
-func runWithProfile(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress) {
+func runWithProfile(ctx context.Context, cfg *config.Config, coord *coordinator.Coordinator, workflow *httpworkflow.Workflow, coll *collector.Collector, prog *progress.Progress, runnerConfig core.RunnerConfig) {
 	profile := cfg.LoadProfile
 
 	prog.Printf("Maestro starting with load profile, workflow %q", cfg.Workflow.Name)
@@ -156,7 +176,7 @@ func runWithProfile(ctx context.Context, cfg *config.Config, coord *coordinator.
 	defer cancel()
 
 	prog.Start()
-	coord.RunWithProfile(ctx, profile, workflow, rateLimiter, prog)
+	coord.RunWithProfileConfig(ctx, profile, workflow, rateLimiter, prog, runnerConfig)
 	coord.Wait()
 	coll.Close()
 }

@@ -35,6 +35,8 @@ maestro --config=<path> [options]
 | `--output` | text | Output format: `text` or `json` |
 | `--quiet` | false | Suppress progress output during test |
 | `--verbose` | false | Enable debug output (request/response logging) |
+| `--max-iterations` | 0 | Max iterations per actor (0 = unlimited) |
+| `--warmup` | 0 | Warmup iterations before collecting metrics (per-actor) |
 
 ### Exit Codes
 
@@ -178,6 +180,59 @@ thresholds:
 |-------|-------------|
 | `rate` | Maximum allowed error rate (e.g., `1%`, `0.5%`) |
 
+## Execution Control
+
+Control iteration-level execution for deterministic testing, warmup phases, and CI/CD integration:
+
+```yaml
+workflow:
+  name: "Deterministic Test"
+  steps:
+    - name: "api"
+      method: GET
+      url: "https://api.example.com/health"
+
+execution:
+  max_iterations: 20      # Each actor runs exactly 20 iterations
+  warmup_iterations: 5    # First 5 iterations per actor excluded from metrics
+```
+
+### Execution Fields
+
+| Field | Description |
+|-------|-------------|
+| `max_iterations` | Maximum iterations per actor (0 = unlimited, run until duration) |
+| `warmup_iterations` | Iterations to run before collecting metrics (per-actor) |
+
+### Use Cases
+
+**Deterministic Testing**: Run exactly N iterations for reproducible results in CI/CD:
+```bash
+maestro --config=test.yaml --max-iterations=100 --actors=5
+# Runs exactly 500 requests (5 actors * 100 iterations)
+```
+
+**Warmup Phase**: Exclude initial iterations from metrics (JVM warmup, connection pooling, cache warming):
+```bash
+maestro --config=test.yaml --warmup=10 --duration=1m
+# First 10 iterations per actor not counted in metrics
+```
+
+**Combined with Load Profiles**: When both `execution` and `loadProfile` are set, the test stops when EITHER limit is reached (whichever comes first):
+```yaml
+loadProfile:
+  phases:
+    - name: "steady"
+      duration: 1m
+      actors: 10
+
+execution:
+  max_iterations: 50    # Safety cap: stop after 50 iterations even if time remains
+  warmup_iterations: 5  # Each actor warms up independently
+```
+
+CLI flags (`--max-iterations`, `--warmup`) override config file values.
+
 ## Output Formats
 
 ### Text Output (default)
@@ -296,6 +351,27 @@ maestro --config=examples/profiles/steady-rate.yaml
 
 # Burst/spike pattern
 maestro --config=examples/profiles/burst.yaml
+```
+
+### Execution Control
+```bash
+# Run exactly 10 iterations per actor (deterministic)
+maestro --config=examples/execution/max-iterations.yaml --actors=5
+
+# Warmup: exclude first 5 iterations from metrics
+maestro --config=examples/execution/warmup.yaml --actors=3 --duration=30s
+
+# Combined: warmup + exact iteration count
+maestro --config=examples/execution/deterministic.yaml --actors=3
+
+# With thresholds for CI/CD
+maestro --config=examples/execution/with-thresholds.yaml --actors=5
+
+# Combined with load profile
+maestro --config=examples/execution/with-profile.yaml
+
+# Override via CLI flags
+maestro --config=examples/local/health-check.yaml --max-iterations=50 --warmup=5 --actors=3
 ```
 
 ### Thresholds

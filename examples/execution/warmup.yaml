@@ -1,0 +1,13 @@
+# Warmup iterations before collecting metrics
+# First 5 iterations per actor are discarded (not included in metrics)
+# Useful for JVM warmup, connection pooling, cache warming, etc.
+
+workflow:
+  name: "Warmup Test"
+  steps:
+    - name: "api"
+      method: GET
+      url: "http://localhost:8080/json"
+
+execution:
+  warmup_iterations: 5

@@ -1,0 +1,20 @@
+# Combine iteration control with thresholds for CI/CD
+# Run exactly 20 iterations per actor after 5 warmup iterations
+# Fail if p95 > 200ms or error rate > 1%
+
+workflow:
+  name: "CI Test with Thresholds"
+  steps:
+    - name: "api_call"
+      method: GET
+      url: "http://localhost:8080/delay/50"
+
+execution:
+  max_iterations: 20
+  warmup_iterations: 5
+
+thresholds:
+  http_req_duration:
+    p95: 200ms
+  http_req_failed:
+    rate: 1%

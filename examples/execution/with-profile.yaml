@@ -1,0 +1,26 @@
+# Combine load profile with iteration control
+# The test stops when EITHER the profile completes OR max iterations reached
+# Warmup applies per-actor regardless of load profile phase
+
+workflow:
+  name: "Profile with Iteration Limit"
+  steps:
+    - name: "api"
+      method: GET
+      url: "http://localhost:8080/health"
+
+loadProfile:
+  phases:
+    - name: "ramp_up"
+      duration: 10s
+      startActors: 1
+      endActors: 10
+
+    - name: "steady"
+      duration: 30s
+      actors: 10
+      rps: 50
+
+execution:
+  max_iterations: 100   # Safety cap per actor
+  warmup_iterations: 3  # Each new actor warms up independently

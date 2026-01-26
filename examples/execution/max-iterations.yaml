@@ -1,0 +1,13 @@
+# Run exactly N iterations per actor (deterministic testing)
+# Each actor runs the workflow exactly 10 times, then stops.
+# Total requests = actors * max_iterations * steps = 5 * 10 * 1 = 50
+
+workflow:
+  name: "Max Iterations Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "http://localhost:8080/health"
+
+execution:
+  max_iterations: 10

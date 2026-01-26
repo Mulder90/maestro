@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,32 @@ func (c *Coordinator) Spawn(ctx context.Context, count int, workflow core.Workfl
 				default:
 					if err := workflow.Run(ctx, id, c, c.reporter); err != nil {
 						return
+					}
+				}
+			}
+		}(actorID)
+	}
+}
+
+// SpawnWithConfig spawns actors using Runner for iteration-level control.
+func (c *Coordinator) SpawnWithConfig(ctx context.Context, count int, workflow core.Workflow, config core.RunnerConfig) {
+	for i := 0; i < count; i++ {
+		actorID := int(c.nextID.Add(1))
+		c.wg.Add(1)
+		go func(id int) {
+			defer c.wg.Done()
+			runner := core.NewRunner(workflow, c.reporter, c, id, config)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					err := runner.RunIteration(ctx)
+					if err != nil {
+						if errors.Is(err, core.ErrMaxIterationsReached) {
+							return // Clean exit
+						}
+						return // Workflow error
 					}
 				}
 			}
@@ -88,6 +115,43 @@ func (c *Coordinator) spawnWithStop(ctx context.Context, workflow core.Workflow)
 	return stopCh
 }
 
+func (c *Coordinator) spawnWithStopConfig(ctx context.Context, workflow core.Workflow, config core.RunnerConfig) chan struct{} {
+	stopCh := make(chan struct{})
+	actorID := int(c.nextID.Add(1))
+	c.activeCount.Add(1)
+	c.wg.Add(1)
+
+	c.stopMu.Lock()
+	c.stopChans = append(c.stopChans, stopCh)
+	c.stopMu.Unlock()
+
+	go func(id int, stop chan struct{}) {
+		defer func() {
+			c.wg.Done()
+			c.activeCount.Add(-1)
+		}()
+		runner := core.NewRunner(workflow, c.reporter, c, id, config)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			default:
+				err := runner.RunIteration(ctx)
+				if err != nil {
+					if errors.Is(err, core.ErrMaxIterationsReached) {
+						return // Clean exit
+					}
+					return // Workflow error
+				}
+			}
+		}
+	}(actorID, stopCh)
+
+	return stopCh
+}
+
 func (c *Coordinator) stopActors(n int) {
 	c.stopMu.Lock()
 	defer c.stopMu.Unlock()
@@ -111,6 +175,10 @@ func (c *Coordinator) stopAllActors() {
 }
 
 func (c *Coordinator) RunWithProfile(ctx context.Context, profile *config.LoadProfile, workflow core.Workflow, rateLimiter *ratelimit.RateLimiter, prog *progress.Progress) {
+	c.RunWithProfileConfig(ctx, profile, workflow, rateLimiter, prog, core.RunnerConfig{})
+}
+
+func (c *Coordinator) RunWithProfileConfig(ctx context.Context, profile *config.LoadProfile, workflow core.Workflow, rateLimiter *ratelimit.RateLimiter, prog *progress.Progress, config core.RunnerConfig) {
 	pm := ratelimit.NewPhaseManager(profile.Phases)
 
 	printMsg := func(format string, args ...interface{}) {
@@ -123,6 +191,8 @@ func (c *Coordinator) RunWithProfile(ctx context.Context, profile *config.LoadPr
 
 	printMsg("Starting load profile with %d phases, total duration: %v",
 		len(profile.Phases), profile.TotalDuration())
+
+	useRunner := config.MaxIterations > 0 || config.WarmupIters > 0
 
 	currentPhaseIdx := -1
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -156,7 +226,11 @@ func (c *Coordinator) RunWithProfile(ctx context.Context, profile *config.LoadPr
 			current := c.ActiveActors()
 			if current < target {
 				for i := current; i < target; i++ {
-					c.spawnWithStop(ctx, workflow)
+					if useRunner {
+						c.spawnWithStopConfig(ctx, workflow, config)
+					} else {
+						c.spawnWithStop(ctx, workflow)
+					}
 				}
 			} else if current > target {
 				c.stopActors(current - target)

@@ -16,6 +16,7 @@ import (
 	"maestro/internal/collector"
 	"maestro/internal/config"
 	"maestro/internal/coordinator"
+	"maestro/internal/core"
 	httpwf "maestro/internal/http"
 	"maestro/internal/ratelimit"
 )
@@ -873,4 +874,326 @@ func createTempConfigFile(t *testing.T, content string) string {
 		t.Fatalf("failed to create temp config: %v", err)
 	}
 	return tmpFile
+}
+
+// Iteration control tests
+
+func TestIntegration_MaxIterations(t *testing.T) {
+	var requestCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Max Iterations Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "` + server.URL + `"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	// Use a very long timeout - we expect to exit via max iterations, not timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 3 actors, 5 max iterations each = 15 total requests
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 5,
+	}
+	coord.SpawnWithConfig(ctx, 3, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Verify exactly 15 requests (3 actors * 5 iterations)
+	actualCount := requestCount.Load()
+	if actualCount != 15 {
+		t.Errorf("expected exactly 15 requests (3 actors * 5 iterations), got %d", actualCount)
+	}
+
+	events := c.Events()
+	if len(events) != 15 {
+		t.Errorf("expected 15 events, got %d", len(events))
+	}
+}
+
+func TestIntegration_WarmupExcludesMetrics(t *testing.T) {
+	var requestCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Warmup Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "` + server.URL + `"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 2 actors, 5 max iterations, 2 warmup iterations each
+	// Total requests: 2 * 5 = 10
+	// Reported events: 2 * (5 - 2) = 6
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 5,
+		WarmupIters:   2,
+	}
+	coord.SpawnWithConfig(ctx, 2, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Should have made 10 requests total
+	actualCount := requestCount.Load()
+	if actualCount != 10 {
+		t.Errorf("expected 10 total requests, got %d", actualCount)
+	}
+
+	// But only 6 events reported (excluding warmup)
+	events := c.Events()
+	if len(events) != 6 {
+		t.Errorf("expected 6 events (excluding warmup), got %d", len(events))
+	}
+}
+
+func TestIntegration_DeterministicIteration(t *testing.T) {
+	// Test that we can run exactly N iterations and verify the state
+	var stepCounts sync.Map
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		val, _ := stepCounts.LoadOrStore(path, new(atomic.Int32))
+		val.(*atomic.Int32).Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Deterministic Test"
+  steps:
+    - name: "step1"
+      method: GET
+      url: "` + server.URL + `/step1"
+    - name: "step2"
+      method: GET
+      url: "` + server.URL + `/step2"
+    - name: "step3"
+      method: GET
+      url: "` + server.URL + `/step3"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 1 actor, 4 iterations = 4 complete workflow runs = 12 steps
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 4,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Each step should be called exactly 4 times
+	for _, step := range []string{"/step1", "/step2", "/step3"} {
+		val, ok := stepCounts.Load(step)
+		if !ok {
+			t.Errorf("step %s was never called", step)
+			continue
+		}
+		count := val.(*atomic.Int32).Load()
+		if count != 4 {
+			t.Errorf("expected step %s to be called 4 times, got %d", step, count)
+		}
+	}
+
+	// Total events should be 12 (4 iterations * 3 steps)
+	events := c.Events()
+	if len(events) != 12 {
+		t.Errorf("expected 12 events, got %d", len(events))
+	}
+}
+
+func TestIntegration_ConfigFileExecution(t *testing.T) {
+	var requestCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Test that execution config in YAML works
+	configContent := `
+workflow:
+  name: "Config File Execution Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "` + server.URL + `"
+
+execution:
+  max_iterations: 3
+  warmup_iterations: 1
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Verify config was parsed correctly
+	if cfg.Execution.MaxIterations != 3 {
+		t.Errorf("expected max_iterations=3, got %d", cfg.Execution.MaxIterations)
+	}
+	if cfg.Execution.WarmupIterations != 1 {
+		t.Errorf("expected warmup_iterations=1, got %d", cfg.Execution.WarmupIterations)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: cfg.Execution.MaxIterations,
+		WarmupIters:   cfg.Execution.WarmupIterations,
+	}
+	coord.SpawnWithConfig(ctx, 2, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// 2 actors * 3 iterations = 6 requests
+	actualCount := requestCount.Load()
+	if actualCount != 6 {
+		t.Errorf("expected 6 requests, got %d", actualCount)
+	}
+
+	// 2 actors * (3 - 1) iterations = 4 reported events
+	events := c.Events()
+	if len(events) != 4 {
+		t.Errorf("expected 4 events (excluding warmup), got %d", len(events))
+	}
+}
+
+func TestIntegration_MaxIterationsStopsBeforeTimeout(t *testing.T) {
+	// Verify that max iterations causes exit before context timeout
+	var requestCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Early Exit Test"
+  steps:
+    - name: "health"
+      method: GET
+      url: "` + server.URL + `"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	// Very long timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	start := time.Now()
+
+	// Only 2 iterations should complete quickly
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 2,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	elapsed := time.Since(start)
+
+	// Should complete in well under 1 second (not 5 minutes)
+	if elapsed > 5*time.Second {
+		t.Errorf("expected quick exit via max iterations, took %v", elapsed)
+	}
+
+	if requestCount.Load() != 2 {
+		t.Errorf("expected 2 requests, got %d", requestCount.Load())
+	}
 }

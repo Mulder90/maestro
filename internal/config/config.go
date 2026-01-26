@@ -16,6 +16,13 @@ type Config struct {
 	Workflow    WorkflowConfig        `yaml:"workflow"`
 	LoadProfile *LoadProfile          `yaml:"loadProfile,omitempty"`
 	Thresholds  *collector.Thresholds `yaml:"thresholds,omitempty"`
+	Execution   ExecutionConfig       `yaml:"execution,omitempty"`
+}
+
+// ExecutionConfig controls iteration-level execution behavior.
+type ExecutionConfig struct {
+	MaxIterations    int `yaml:"max_iterations"`
+	WarmupIterations int `yaml:"warmup_iterations"`
 }
 
 // LoadProfile defines the load pattern for a test.

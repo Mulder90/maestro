@@ -1,0 +1,21 @@
+# Deterministic test: warmup + exact iteration count
+# 3 warmup iterations + 10 measured iterations per actor
+# Perfect for CI/CD where you need reproducible results
+
+workflow:
+  name: "Deterministic Test"
+  steps:
+    - name: "get_users"
+      method: GET
+      url: "http://localhost:8080/json"
+
+    - name: "create_user"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+      body: '{"name": "test-user"}'
+
+execution:
+  max_iterations: 10
+  warmup_iterations: 3
