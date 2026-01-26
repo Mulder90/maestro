@@ -504,7 +504,7 @@ thresholds:
 	coord.Wait()
 	c.Close()
 
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 	results := cfg.Thresholds.Check(m)
 
 	if !results.Passed {
@@ -554,7 +554,7 @@ thresholds:
 	coord.Wait()
 	c.Close()
 
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 	results := cfg.Thresholds.Check(m)
 
 	// Should fail because all requests return 500 (100% error rate > 1% threshold)
@@ -625,7 +625,7 @@ thresholds:
 	coord.Wait()
 	c.Close()
 
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 	results := cfg.Thresholds.Check(m)
 
 	// Should fail because responses take ~50ms but threshold is 10ms
@@ -690,7 +690,7 @@ loadProfile:
 	coord.Wait()
 	c.Close()
 
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 
 	// Should have completed multiple requests across all phases
 	if m.TotalRequests < 10 {
@@ -738,7 +738,7 @@ workflow:
 	c.Close()
 
 	// Should complete without panic, with no events
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 	if m.TotalRequests != 0 {
 		t.Errorf("expected 0 requests for empty workflow, got %d", m.TotalRequests)
 	}
@@ -793,7 +793,7 @@ workflow:
 	c.Close()
 
 	// Should have sent the large payload successfully
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 	if m.TotalRequests == 0 {
 		t.Error("expected at least one request")
 	}
@@ -846,7 +846,7 @@ workflow:
 	coord.Wait()
 	c.Close()
 
-	m := c.Compute()
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
 
 	// With 20 concurrent actors and 10ms per request over 200ms
 	// we should get significantly more than 20 requests

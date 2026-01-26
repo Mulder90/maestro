@@ -58,10 +58,11 @@ func (p *Progress) run() {
 }
 
 func (p *Progress) printProgress() {
-	m := p.collector.Compute()
-	elapsed := time.Since(p.startTime).Round(time.Second)
-	mins := int(elapsed.Minutes())
-	secs := int(elapsed.Seconds()) % 60
+	elapsed := time.Since(p.startTime)
+	m := collector.ComputeMetrics(p.collector.Events(), elapsed)
+	elapsedRounded := elapsed.Round(time.Second)
+	mins := int(elapsedRounded.Minutes())
+	secs := int(elapsedRounded.Seconds()) % 60
 	errorRate := 0.0
 	if m.TotalRequests > 0 {
 		errorRate = float64(m.FailureCount) / float64(m.TotalRequests) * 100

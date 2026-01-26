@@ -105,7 +105,7 @@ func main() {
 
 	prog.Stop()
 
-	metrics := coll.Compute()
+	metrics := collector.ComputeMetrics(coll.Events(), coll.Duration())
 
 	var thresholdResults *collector.ThresholdResults
 	if cfg.Thresholds != nil {
@@ -113,9 +113,9 @@ func main() {
 	}
 
 	if *output == "json" {
-		coll.PrintJSON(os.Stdout, metrics, thresholdResults)
+		collector.FormatJSON(os.Stdout, metrics, thresholdResults)
 	} else {
-		coll.PrintText(os.Stdout, metrics, thresholdResults)
+		collector.FormatText(os.Stdout, metrics, thresholdResults)
 	}
 
 	if interrupted {
