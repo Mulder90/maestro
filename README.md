@@ -449,6 +449,19 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
+### Test Categories
+
+```bash
+# Unit tests for pure metrics computation
+go test ./internal/collector -v -run ComputeMetrics
+
+# Unit tests for output formatting
+go test ./internal/collector -v -run Format
+
+# Integration tests (end-to-end)
+go test -v -run Integration
+```
+
 ## Architecture
 
 Maestro uses an actor-based concurrency model:
@@ -457,7 +470,9 @@ Maestro uses an actor-based concurrency model:
 - **Coordinator**: Spawns/terminates actors dynamically based on load profile
 - **PhaseManager**: Tracks current phase and calculates target actor counts
 - **RateLimiter**: Token bucket rate limiter for RPS control
-- **Collector**: Aggregates metrics and prints summary
+- **Collector**: Thin wrapper for event collection and time tracking
+- **ComputeMetrics**: Pure function for metrics calculation from events
+- **FormatText/FormatJSON**: Standalone formatting functions for output
 - **Reporter**: Thread-safe bridge for actors to report events
 
 Each actor runs the complete workflow in a loop until stopped or the duration expires.

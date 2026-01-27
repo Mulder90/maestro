@@ -12,32 +12,52 @@ Maestro executes HTTP workflows with configurable concurrency patterns. It suppo
 ## Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                           main.go                                │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐  │
-│  │   Config    │    │  Collector  │    │    Coordinator      │  │
-│  │   Loader    │    │  (Reporter) │    │                     │  │
-│  └──────┬──────┘    └──────▲──────┘    └──────────┬──────────┘  │
-└─────────┼──────────────────┼─────────────────────┼──────────────┘
-          │                  │                     │
-          ▼                  │                     ▼
-   ┌─────────────┐           │              ┌─────────────┐
-   │ LoadProfile │           │              │   Actors    │
-   │   (YAML)    │           │              │ (goroutines)│
-   └──────┬──────┘           │              └──────┬──────┘
-          │                  │                     │
-          ▼                  │                     ▼
-   ┌─────────────┐           │              ┌─────────────┐
-   │PhaseManager │           │              │ HTTPWorkflow│
-   └──────┬──────┘           │              └──────┬──────┘
-          │                  │                     │
-          ▼                  │                     ▼
-   ┌─────────────┐           │              ┌─────────────┐
-   │ RateLimiter │◀──────────┼──────────────│  HTTP Steps │
-   └─────────────┘           │              └──────┬──────┘
-                             │                     │
-                             └─────────────────────┘
-                                  Report(Event)
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              main.go                                      │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐           │
+│  │   Config    │    │  Collector  │    │    Coordinator      │           │
+│  │   Loader    │    │  (Reporter) │    │                     │           │
+│  └──────┬──────┘    └──────▲──────┘    └──────────┬──────────┘           │
+│         │                  │                      │                       │
+│         │           ┌──────┴──────┐               │                       │
+│         │           │  Events()   │               │                       │
+│         │           │  Duration() │               │                       │
+│         │           └──────┬──────┘               │                       │
+│         │                  ▼                      │                       │
+│         │     ┌────────────────────────┐          │                       │
+│         │     │   ComputeMetrics()     │          │                       │
+│         │     │   (pure function)      │          │                       │
+│         │     └────────────┬───────────┘          │                       │
+│         │                  ▼                      │                       │
+│         │     ┌────────────────────────┐          │                       │
+│         │     │ FormatText/FormatJSON  │          │                       │
+│         │     │ (standalone functions) │          │                       │
+│         │     └────────────────────────┘          │                       │
+└─────────┼─────────────────────────────────────────┼───────────────────────┘
+          │                                         │
+          ▼                                         ▼
+   ┌─────────────┐                           ┌─────────────┐
+   │ LoadProfile │                           │   Actors    │
+   │   (YAML)    │                           │ (goroutines)│
+   └──────┬──────┘                           └──────┬──────┘
+          │                                         │
+          ▼                                         ▼
+   ┌─────────────┐                           ┌─────────────┐
+   │PhaseManager │                           │ HTTPWorkflow│
+   └──────┬──────┘                           └──────┬──────┘
+          │                                         │
+          ▼                                         ▼
+   ┌─────────────┐                           ┌─────────────┐
+   │ RateLimiter │◀──────────────────────────│  HTTP Steps │
+   └─────────────┘                           └──────┬──────┘
+                                                    │
+                              ┌─────────────────────┘
+                              │ Report(Event)
+                              ▼
+                       ┌─────────────┐
+                       │  Collector  │
+                       │  (channel)  │
+                       └─────────────┘
 ```
 
 ## Components
@@ -73,7 +93,9 @@ type Reporter interface {
 |-----------|------|----------------|
 | **Config** | `internal/config/config.go` | Parse YAML config files, load profiles |
 | **Coordinator** | `internal/coordinator/coordinator.go` | Spawn/terminate actors, manage lifecycle |
-| **Collector** | `internal/collector/collector.go` | Aggregate events, compute statistics |
+| **Collector** | `internal/collector/collector.go` | Event collection, storage, and time tracking |
+| **ComputeMetrics** | `internal/collector/compute.go` | Pure function for metrics calculation |
+| **FormatText/JSON** | `internal/collector/format.go` | Standalone output formatting functions |
 | **HTTPWorkflow** | `internal/http/workflow.go` | Execute HTTP request sequences |
 | **PhaseManager** | `internal/ratelimit/phase.go` | Track phases, calculate target actor count |
 | **RateLimiter** | `internal/ratelimit/limiter.go` | Token bucket rate limiting |
@@ -219,8 +241,10 @@ maestro/
 │       └── main.go              # Test server CLI
 ├── internal/
 │   ├── collector/
-│   │   ├── collector.go         # Event aggregation and summary
-│   │   ├── metrics.go           # Metrics computation (percentiles)
+│   │   ├── collector.go         # Event collection, storage, time tracking
+│   │   ├── compute.go           # ComputeMetrics pure function
+│   │   ├── format.go            # FormatText, FormatJSON standalone functions
+│   │   ├── metrics.go           # Metrics types and percentile computation
 │   │   └── thresholds.go        # Threshold checking
 │   ├── config/
 │   │   └── config.go            # YAML config parsing
@@ -264,6 +288,8 @@ maestro/
 5. **Workflows are self-contained** — each workflow manages its own HTTP logic
 6. **Rate limiting is global** — single limiter shared by all actors
 7. **Backward compatible** — configs without `loadProfile` work with classic mode
+8. **Pure functions for computation** — `ComputeMetrics` is a pure function, enabling direct value testing
+9. **Separation of concerns** — collection, computation, and formatting are separate components
 
 ## Configuration Schema
 
@@ -286,6 +312,65 @@ loadProfile:                # optional - enables profile mode
       startActors: int      # for ramp phases
       endActors: int        # for ramp phases
       rps: int              # optional rate limit
+
+execution:                  # optional - iteration control
+  max_iterations: int       # max iterations per actor (0 = unlimited)
+  warmup_iterations: int    # warmup iterations excluded from metrics
+
+thresholds:                 # optional - pass/fail criteria
+  http_req_duration:
+    avg: duration
+    p50: duration
+    p90: duration
+    p95: duration
+    p99: duration
+  http_req_failed:
+    rate: string            # e.g., "1%", "0.5%"
+```
+
+## Collector Design
+
+The collector package separates concerns into distinct components:
+
+### Collector (collector.go)
+Thin wrapper for event collection only:
+- `NewCollector()` — creates collector and starts collection goroutine
+- `Report(event)` — sends event to buffered channel (thread-safe)
+- `Close()` — signals collection to stop, records end time
+- `Events()` — returns copy of collected events
+- `Duration()` — returns test duration (start to end or start to now)
+
+### ComputeMetrics (compute.go)
+Pure function for metrics calculation:
+```go
+func ComputeMetrics(events []core.Event, testDuration time.Duration) *Metrics
+```
+- No side effects, no dependencies on Collector state
+- Takes events slice and duration as explicit parameters
+- Returns computed `*Metrics` with counts, rates, percentiles, and per-step breakdowns
+- Enables direct testing on values (facts) rather than string output (effects)
+
+### Formatters (format.go)
+Standalone functions for output:
+```go
+func FormatText(w io.Writer, m *Metrics, thresholds *ThresholdResults)
+func FormatJSON(w io.Writer, m *Metrics, thresholds *ThresholdResults)
+```
+- No receiver, work with any `*Metrics` value
+- Can be tested independently with synthetic metrics
+
+### Usage Pattern
+```go
+// Collect events
+coll := collector.NewCollector()
+// ... run test ...
+coll.Close()
+
+// Compute metrics (pure function)
+metrics := collector.ComputeMetrics(coll.Events(), coll.Duration())
+
+// Format output (standalone function)
+collector.FormatText(os.Stdout, metrics, thresholdResults)
 ```
 
 ## Thread Safety

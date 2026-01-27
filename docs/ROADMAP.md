@@ -14,7 +14,9 @@ Maestro is a functional HTTP load testing tool with:
 - Graceful shutdown
 - Local test server for offline testing
 - Verbose mode for request/response debugging
-- **Step interface for multi-protocol extensibility**
+- Step interface for multi-protocol extensibility
+- Execution control (max iterations, warmup)
+- **Clean architecture with separated concerns (pure functions for metrics computation)**
 
 ## Production Readiness Gaps
 
@@ -22,8 +24,14 @@ Maestro is a functional HTTP load testing tool with:
 
 **Current**: Percentiles, JSON output, real-time progress indicator.
 
+**Architecture**: Clean separation of concerns:
+- `ComputeMetrics()` - pure function for metrics calculation
+- `FormatText()`/`FormatJSON()` - standalone formatting functions
+- Tests assert on `*Metrics` values directly (facts, not effects)
+
 **Needed**:
 - [x] Percentiles (p50, p90, p95, p99)
+- [x] Pure function metrics computation
 - [ ] Histogram of response times
 - [x] Real-time metrics during test (progress indicator)
 - [x] Export formats (JSON) - CSV, HTML still needed
