@@ -167,6 +167,7 @@ maestro --config=examples/thresholds/passing.yaml
 
 ## Documentation
 
+- [Contributing](docs/CONTRIBUTING.md) - Development setup, running tests
 - [Architecture](docs/ARCHITECTURE.md) - Design and internals
 - [Roadmap](docs/ROADMAP.md) - Future plans
 
