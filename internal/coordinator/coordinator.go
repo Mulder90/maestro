@@ -42,6 +42,7 @@ func (c *Coordinator) Spawn(ctx context.Context, count int, workflow core.Workfl
 		c.wg.Add(1)
 		go func(id int) {
 			defer c.wg.Done()
+			defer c.recoverPanic(id)
 			for {
 				select {
 				case <-ctx.Done():
@@ -63,6 +64,7 @@ func (c *Coordinator) SpawnWithConfig(ctx context.Context, count int, workflow c
 		c.wg.Add(1)
 		go func(id int) {
 			defer c.wg.Done()
+			defer c.recoverPanic(id)
 			runner := core.NewRunner(workflow, c.reporter, c, id, config)
 			for {
 				select {
@@ -105,6 +107,7 @@ func (c *Coordinator) spawnWithStop(ctx context.Context, workflow core.Workflow)
 			c.wg.Done()
 			c.activeCount.Add(-1)
 		}()
+		defer c.recoverPanic(id)
 		for {
 			select {
 			case <-ctx.Done():
@@ -137,6 +140,7 @@ func (c *Coordinator) spawnWithStopConfig(ctx context.Context, workflow core.Wor
 			c.wg.Done()
 			c.activeCount.Add(-1)
 		}()
+		defer c.recoverPanic(id)
 		runner := core.NewRunner(workflow, c.reporter, c, id, config)
 		for {
 			select {
@@ -157,6 +161,18 @@ func (c *Coordinator) spawnWithStopConfig(ctx context.Context, workflow core.Wor
 	}(actorID, stopCh)
 
 	return stopCh
+}
+
+// recoverPanic recovers from panics in actor goroutines and reports them as failed events.
+func (c *Coordinator) recoverPanic(actorID int) {
+	if r := recover(); r != nil {
+		c.reporter.Report(core.Event{
+			ActorID: actorID,
+			Step:    "panic",
+			Success: false,
+			Error:   fmt.Sprintf("panic: %v", r),
+		})
+	}
 }
 
 func (c *Coordinator) stopActors(n int) {

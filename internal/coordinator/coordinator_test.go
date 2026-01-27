@@ -503,3 +503,84 @@ func TestCoordinator_RunWithProfile_ContextCancellation(t *testing.T) {
 		t.Errorf("expected 0 actors after cancellation, got %d", coord.ActiveActors())
 	}
 }
+
+func TestCoordinator_SpawnWithConfig_MaxIterations(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	config := core.RunnerConfig{MaxIterations: 3}
+	coord.SpawnWithConfig(ctx, 2, workflow, config)
+	coord.Wait()
+	c.Close()
+
+	events := c.Events()
+	// 2 actors * 3 max iterations = 6 events
+	if len(events) != 6 {
+		t.Errorf("expected 6 events (2 actors * 3 iterations), got %d", len(events))
+	}
+}
+
+func TestCoordinator_SpawnWithConfig_WarmupIterations(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &mockWorkflow{}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// 2 warmup + 3 max = 5 total iterations, but only 3 should be reported
+	config := core.RunnerConfig{MaxIterations: 5, WarmupIters: 2}
+	coord.SpawnWithConfig(ctx, 1, workflow, config)
+	coord.Wait()
+	c.Close()
+
+	events := c.Events()
+	// Only 3 events should be reported (5 max - 2 warmup)
+	if len(events) != 3 {
+		t.Errorf("expected 3 events (5 max - 2 warmup), got %d", len(events))
+	}
+}
+
+// panicWorkflow panics on first run
+type panicWorkflow struct {
+	panicOnce atomic.Bool
+}
+
+func (p *panicWorkflow) Run(ctx context.Context, actorID int, coord core.Coordinator, rep core.Reporter) error {
+	if p.panicOnce.CompareAndSwap(false, true) {
+		panic("test panic")
+	}
+	rep.Report(core.Event{ActorID: actorID, Step: "mock", Success: true})
+	return nil
+}
+
+func TestCoordinator_RecoversPanic(t *testing.T) {
+	c := collector.NewCollector()
+	coord := NewCoordinator(c)
+
+	workflow := &panicWorkflow{}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	// Spawn 2 actors - one will panic
+	coord.Spawn(ctx, 2, workflow)
+	coord.Wait()
+	c.Close()
+
+	// Should have a panic event reported
+	var hasPanicEvent bool
+	for _, e := range c.Events() {
+		if e.Step == "panic" && !e.Success {
+			hasPanicEvent = true
+			break
+		}
+	}
+
+	if !hasPanicEvent {
+		t.Error("expected panic to be recovered and reported as failed event")
+	}
+}
