@@ -94,7 +94,7 @@ func (p *Progress) Print(message string) {
 		return
 	}
 	p.mu.Lock()
-	fmt.Fprintf(p.output, "\033[K%s\n", message)
+	fmt.Fprintf(p.output, "\r\033[K%s\n", message)
 	p.mu.Unlock()
 }
 
@@ -103,6 +103,6 @@ func (p *Progress) Printf(format string, args ...interface{}) {
 		return
 	}
 	p.mu.Lock()
-	fmt.Fprintf(p.output, "\033[K"+format+"\n", args...)
+	fmt.Fprintf(p.output, "\r\033[K"+format+"\n", args...)
 	p.mu.Unlock()
 }
