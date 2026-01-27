@@ -3,9 +3,16 @@ package collector
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"maestro/internal/core"
+)
+
+const (
+	// eventBufferSize is the channel buffer for incoming events.
+	// Large enough to handle bursts without blocking reporters.
+	eventBufferSize = 1000
 )
 
 // Collector aggregates events from actors and produces a summary.
@@ -16,13 +23,14 @@ type Collector struct {
 	mu        sync.Mutex
 	startTime time.Time
 	endTime   time.Time
+	dropped   atomic.Int64
 }
 
 // NewCollector creates a new Collector and starts its collection goroutine.
 func NewCollector() *Collector {
 	c := &Collector{
 		events:    make([]core.Event, 0),
-		ch:        make(chan core.Event, 1000),
+		ch:        make(chan core.Event, eventBufferSize),
 		done:      make(chan struct{}),
 		startTime: time.Now(),
 	}
@@ -44,7 +52,13 @@ func (c *Collector) Report(event core.Event) {
 	select {
 	case c.ch <- event:
 	default:
+		c.dropped.Add(1)
 	}
+}
+
+// DroppedEvents returns the count of events dropped due to full buffer.
+func (c *Collector) DroppedEvents() int64 {
+	return c.dropped.Load()
 }
 
 // Close signals the collector to stop accepting events.

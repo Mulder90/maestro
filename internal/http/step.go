@@ -71,9 +71,9 @@ func (s *Step) Execute(ctx context.Context, vars core.Variables) (core.Result, e
 	var respBody []byte
 	if s.debug != nil {
 		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, maxDebugBodySize))
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body) // drain errors are ignorable
 	} else {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body) // drain errors are ignorable
 	}
 
 	success := resp.StatusCode < 400

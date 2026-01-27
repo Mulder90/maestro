@@ -1,3 +1,4 @@
+// Package http implements HTTP workflow execution.
 package http
 
 import (

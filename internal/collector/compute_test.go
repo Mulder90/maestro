@@ -219,3 +219,31 @@ func TestComputeMetrics_DoesNotModifyInput(t *testing.T) {
 		t.Error("ComputeMetrics should not modify input slice elements")
 	}
 }
+
+func BenchmarkComputeMetrics(b *testing.B) {
+	events := make([]core.Event, 10000)
+	for i := range events {
+		events[i] = core.Event{
+			Duration: time.Duration(i) * time.Microsecond,
+			Success:  true,
+			Step:     "test",
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ComputeMetrics(events, time.Second)
+	}
+}
+
+func BenchmarkCollectorReport(b *testing.B) {
+	c := NewCollector()
+	event := core.Event{ActorID: 1, Step: "test", Success: true}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Report(event)
+	}
+	b.StopTimer()
+	c.Close()
+}

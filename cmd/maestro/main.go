@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -73,10 +74,10 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	interrupted := false
+	var interrupted atomic.Bool
 	go func() {
 		<-sigCh
-		interrupted = true
+		interrupted.Store(true)
 		if !*quiet {
 			fmt.Fprintln(os.Stderr, "\nReceived interrupt signal, shutting down...")
 		}
@@ -112,13 +113,17 @@ func main() {
 		thresholdResults = cfg.Thresholds.Check(metrics)
 	}
 
+	if dropped := coll.DroppedEvents(); dropped > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: %d events dropped (buffer full)\n", dropped)
+	}
+
 	if *output == "json" {
 		collector.FormatJSON(os.Stdout, metrics, thresholdResults)
 	} else {
 		collector.FormatText(os.Stdout, metrics, thresholdResults)
 	}
 
-	if interrupted {
+	if interrupted.Load() {
 		os.Exit(ExitSuccess)
 	}
 

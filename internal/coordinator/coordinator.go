@@ -1,3 +1,4 @@
+// Package coordinator manages actor lifecycle and orchestration.
 package coordinator
 
 import (
@@ -12,6 +13,12 @@ import (
 	"maestro/internal/core"
 	"maestro/internal/progress"
 	"maestro/internal/ratelimit"
+)
+
+const (
+	// phaseTickInterval is how often we check for phase transitions
+	// and adjust actor counts during load profile execution.
+	phaseTickInterval = 100 * time.Millisecond
 )
 
 type Coordinator struct {
@@ -195,7 +202,7 @@ func (c *Coordinator) RunWithProfileConfig(ctx context.Context, profile *config.
 	useRunner := config.MaxIterations > 0 || config.WarmupIters > 0
 
 	currentPhaseIdx := -1
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(phaseTickInterval)
 	defer ticker.Stop()
 
 	for {

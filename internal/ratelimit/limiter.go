@@ -1,3 +1,4 @@
+// Package ratelimit provides rate limiting and load profile phase management.
 package ratelimit
 
 import (

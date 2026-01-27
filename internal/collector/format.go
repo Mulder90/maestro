@@ -92,7 +92,7 @@ func FormatJSON(w io.Writer, m *Metrics, thresholds *ThresholdResults) {
 
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	encoder.Encode(output)
+	_ = encoder.Encode(output) // stdout errors are unrecoverable
 }
 
 type jsonDurationMetrics struct {

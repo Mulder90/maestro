@@ -1,3 +1,4 @@
+// Package progress provides real-time progress display.
 package progress
 
 import (
