@@ -15,8 +15,12 @@ import (
 // varPattern matches ${var} and ${env:VAR} placeholders.
 var varPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
-// Substitute replaces ${var} and ${env:VAR} placeholders in text.
-// Returns all errors joined if multiple variables are missing.
+// Substitute replaces placeholders in text:
+//   - ${var} - workflow variables
+//   - ${env:VAR} - environment variables
+//   - ${func(args)} - built-in functions (uuid, timestamp, random, etc.)
+//
+// Returns all errors joined if multiple substitutions fail.
 // If text contains no placeholders, it is returned unchanged (fast path).
 func Substitute(text string, vars core.Variables) (string, error) {
 	// Fast path: no variables to substitute
@@ -26,11 +30,11 @@ func Substitute(text string, vars core.Variables) (string, error) {
 
 	var errs []error
 	result := varPattern.ReplaceAllStringFunc(text, func(match string) string {
-		name := match[2 : len(match)-1] // Extract content between ${ and }
+		expr := match[2 : len(match)-1] // Extract content between ${ and }
 
 		// Handle environment variables
-		if strings.HasPrefix(name, "env:") {
-			envName := name[4:]
+		if strings.HasPrefix(expr, "env:") {
+			envName := expr[4:]
 			if val, ok := os.LookupEnv(envName); ok {
 				return val
 			}
@@ -38,11 +42,20 @@ func Substitute(text string, vars core.Variables) (string, error) {
 			return match
 		}
 
+		// Handle built-in functions (contains parentheses)
+		if result, isFunc, err := evalFunction(expr); isFunc {
+			if err != nil {
+				errs = append(errs, err)
+				return match
+			}
+			return result
+		}
+
 		// Handle workflow variables
-		if val, ok := vars.Get(name); ok {
+		if val, ok := vars.Get(expr); ok {
 			return fmt.Sprintf("%v", val)
 		}
-		errs = append(errs, fmt.Errorf("variable %q not found", name))
+		errs = append(errs, fmt.Errorf("variable %q not found", expr))
 		return match
 	})
 

@@ -1,0 +1,23 @@
+# Built-in functions for dynamic data generation
+# Demonstrates: uuid(), timestamp(), random(), random_string(), date()
+#
+# Run with: maestro --config=examples/variables/built-in-functions.yaml --max-iterations=3 --verbose
+
+workflow:
+  name: "Built-in Functions"
+  steps:
+    - name: "create_resource"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+        X-Request-ID: "${uuid()}"
+        X-Timestamp: "${timestamp()}"
+      body: |
+        {
+          "id": "${uuid()}",
+          "name": "user-${random_string(8)}",
+          "age": ${random(18,65)},
+          "created_at": "${date(2006-01-02T15:04:05Z07:00)}",
+          "score": ${random(0,100)}
+        }

@@ -88,7 +88,7 @@ workflow:
 ```
 
 Variables use `${var}` syntax. Extract values from JSON responses with `$.path` (JSONPath).
-Environment variables use `${env:VAR}`.
+Environment variables use `${env:VAR}`. Built-in functions: `${uuid()}`, `${random(1,100)}`, `${random_string(8)}`, `${timestamp()}`, `${date(2006-01-02)}`.
 
 ### Thresholds (CI/CD)
 

@@ -56,7 +56,7 @@ Maestro is a functional HTTP load testing tool with:
 - [x] Variable substitution in requests (`${variable}`)
 - [x] Environment variable support (`${env:VAR}`)
 - [ ] Data files (CSV, JSON) for parameterization
-- [ ] Built-in functions (random, uuid, timestamp)
+- [x] Built-in functions: `${uuid()}`, `${random(min,max)}`, `${random_string(len)}`, `${timestamp()}`, `${date(format)}`
 
 ### 4. Authentication
 
