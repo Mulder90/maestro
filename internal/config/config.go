@@ -51,8 +51,15 @@ type Phase struct {
 
 // WorkflowConfig defines a named workflow with a sequence of steps.
 type WorkflowConfig struct {
-	Name  string       `yaml:"name"`
-	Steps []StepConfig `yaml:"steps"`
+	Name  string                      `yaml:"name"`
+	Data  map[string]DataSourceConfig `yaml:"data,omitempty"`
+	Steps []StepConfig                `yaml:"steps"`
+}
+
+// DataSourceConfig defines a data file for parameterization.
+type DataSourceConfig struct {
+	File string `yaml:"file"` // Path to CSV or JSON file
+	Mode string `yaml:"mode"` // "sequential" (default) or "random"
 }
 
 // StepConfig defines a single request step.

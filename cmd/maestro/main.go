@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"maestro/internal/config"
 	"maestro/internal/coordinator"
 	"maestro/internal/core"
+	"maestro/internal/data"
 	httpworkflow "maestro/internal/http"
 	"maestro/internal/progress"
 	"maestro/internal/ratelimit"
@@ -54,6 +56,21 @@ func main() {
 		os.Exit(ExitError)
 	}
 
+	// Load data sources (relative paths resolved against config file directory)
+	configDir := filepath.Dir(*configPath)
+	var dataSources data.Sources
+	if len(cfg.Workflow.Data) > 0 {
+		dataSources = make(data.Sources)
+		for name, dsCfg := range cfg.Workflow.Data {
+			src, err := data.LoadFile(name, dsCfg.File, data.Mode(dsCfg.Mode), configDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error loading data %q: %v\n", name, err)
+				os.Exit(ExitError)
+			}
+			dataSources[name] = src
+		}
+	}
+
 	coll := collector.NewCollector()
 	coord := coordinator.NewCoordinator(coll)
 
@@ -67,7 +84,8 @@ func main() {
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		Debug: debugLogger,
+		Debug:       debugLogger,
+		DataSources: dataSources,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -55,8 +55,8 @@ Maestro is a functional HTTP load testing tool with:
 - [x] Variable extraction from responses (JSONPath)
 - [x] Variable substitution in requests (`${variable}`)
 - [x] Environment variable support (`${env:VAR}`)
-- [ ] Data files (CSV, JSON) for parameterization
 - [x] Built-in functions: `${uuid()}`, `${random(min,max)}`, `${random_string(len)}`, `${timestamp()}`, `${date(format)}`
+- [x] Data files (CSV, JSON) for parameterization
 
 ### 4. Authentication
 
@@ -221,7 +221,7 @@ Focus: Prepare architecture for multi-protocol
    - [x] Update Event struct with Protocol, StatusCode, BytesSent, BytesRecv
 
 2. **Enhanced data handling**
-   - [ ] CSV data files
+   - [x] CSV/JSON data files
    - [x] Request/response logging (verbose mode)
    - [ ] Assertions framework
 

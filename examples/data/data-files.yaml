@@ -1,0 +1,42 @@
+# Data files for parameterized tests
+# Demonstrates: CSV and JSON data sources with sequential/random access
+#
+# Run with: maestro --config=examples/data/data-files.yaml --max-iterations=5 --verbose
+
+workflow:
+  name: "Data Files Demo"
+
+  data:
+    users:
+      file: "users.csv"
+      mode: sequential     # iterate through rows in order, wrap around
+    products:
+      file: "products.json"
+      mode: random         # pick random row each time
+
+  steps:
+    - name: "login_user"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "action": "login",
+          "username": "${data.users.username}",
+          "password": "${data.users.password}",
+          "email": "${data.users.email}"
+        }
+
+    - name: "browse_product"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "action": "view_product",
+          "product_id": ${data.products.id},
+          "product_name": "${data.products.name}",
+          "price": ${data.products.price}
+        }

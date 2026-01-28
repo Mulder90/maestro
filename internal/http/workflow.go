@@ -9,6 +9,7 @@ import (
 
 	"maestro/internal/config"
 	"maestro/internal/core"
+	"maestro/internal/data"
 	"maestro/internal/ratelimit"
 )
 
@@ -17,6 +18,7 @@ type Workflow struct {
 	Client      *http.Client
 	RateLimiter *ratelimit.RateLimiter
 	Debug       *DebugLogger
+	DataSources data.Sources
 
 	steps     []core.Step
 	stepsOnce sync.Once
@@ -38,6 +40,11 @@ func (w *Workflow) Run(ctx context.Context, actorID int, coord core.Coordinator,
 
 	ctx = core.ContextWithActorID(ctx, actorID)
 	vars := core.NewVariables()
+
+	// Inject data from data sources (each call advances to next row)
+	if w.DataSources != nil {
+		w.DataSources.InjectVariables(vars)
+	}
 
 	for _, step := range w.steps {
 		result, err := step.Execute(ctx, vars)

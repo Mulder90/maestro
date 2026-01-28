@@ -90,6 +90,29 @@ workflow:
 Variables use `${var}` syntax. Extract values from JSON responses with `$.path` (JSONPath).
 Environment variables use `${env:VAR}`. Built-in functions: `${uuid()}`, `${random(1,100)}`, `${random_string(8)}`, `${timestamp()}`, `${date(2006-01-02)}`.
 
+### Data Files
+
+Load test data from CSV or JSON files:
+
+```yaml
+workflow:
+  name: "Parameterized Test"
+  data:
+    users:
+      file: "users.csv"      # CSV with headers: username,password
+      mode: sequential       # iterate in order (default)
+    products:
+      file: "products.json"  # JSON array of objects
+      mode: random           # pick random row each time
+  steps:
+    - name: "login"
+      method: POST
+      url: "https://api.example.com/login"
+      body: '{"user": "${data.users.username}", "pass": "${data.users.password}"}'
+```
+
+Access data fields as `${data.sourcename.fieldname}`. File paths are relative to the config file.
+
 ### Thresholds (CI/CD)
 
 Fail the test if metrics exceed limits:

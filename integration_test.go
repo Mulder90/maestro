@@ -2,6 +2,7 @@ package maestro_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"maestro/internal/config"
 	"maestro/internal/coordinator"
 	"maestro/internal/core"
+	"maestro/internal/data"
 	httpwf "maestro/internal/http"
 	"maestro/internal/ratelimit"
 )
@@ -1602,5 +1604,202 @@ workflow:
 	}
 	if !strings.Contains(events[0].Error, "not found") {
 		t.Errorf("expected error to mention 'not found', got: %s", events[0].Error)
+	}
+}
+
+func TestIntegration_DataFiles_CSV(t *testing.T) {
+	var receivedUsernames []string
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		// Extract username from JSON body
+		var data map[string]string
+		json.Unmarshal(body, &data)
+		if u, ok := data["username"]; ok {
+			receivedUsernames = append(receivedUsernames, u)
+		}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create temp CSV file
+	csvContent := `username,password
+alice,secret1
+bob,secret2
+charlie,secret3`
+	csvPath := filepath.Join(t.TempDir(), "users.csv")
+	if err := os.WriteFile(csvPath, []byte(csvContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := `
+workflow:
+  name: "Data Files CSV Test"
+  data:
+    users:
+      file: "` + csvPath + `"
+      mode: sequential
+  steps:
+    - name: "login"
+      method: POST
+      url: "` + server.URL + `"
+      headers:
+        Content-Type: "application/json"
+      body: '{"username": "${data.users.username}", "password": "${data.users.password}"}'
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Load data sources
+	dataSources := make(data.Sources)
+	for name, dsCfg := range cfg.Workflow.Data {
+		src, err := data.LoadFile(name, dsCfg.File, data.Mode(dsCfg.Mode), "")
+		if err != nil {
+			t.Fatalf("failed to load data source %q: %v", name, err)
+		}
+		dataSources[name] = src
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config:      cfg.Workflow,
+		Client:      &http.Client{Timeout: 5 * time.Second},
+		DataSources: dataSources,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 4, // More than 3 rows to test wrap-around
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Should have received 4 usernames in sequential order with wrap-around
+	expected := []string{"alice", "bob", "charlie", "alice"}
+	if len(receivedUsernames) != 4 {
+		t.Fatalf("expected 4 usernames, got %d: %v", len(receivedUsernames), receivedUsernames)
+	}
+	for i, want := range expected {
+		if receivedUsernames[i] != want {
+			t.Errorf("username[%d] = %q, want %q", i, receivedUsernames[i], want)
+		}
+	}
+
+	m := collector.ComputeMetrics(c.Events(), c.Duration())
+	if m.SuccessRate < 100 {
+		t.Errorf("expected 100%% success rate, got %.2f%%", m.SuccessRate)
+	}
+}
+
+func TestIntegration_DataFiles_JSON_Random(t *testing.T) {
+	var receivedIDs []float64
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		var data map[string]any
+		json.Unmarshal(body, &data)
+		if id, ok := data["product_id"].(float64); ok {
+			receivedIDs = append(receivedIDs, id)
+		}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create temp JSON file
+	jsonContent := `[
+		{"id": 1, "name": "Widget"},
+		{"id": 2, "name": "Gadget"},
+		{"id": 3, "name": "Gizmo"}
+	]`
+	jsonPath := filepath.Join(t.TempDir(), "products.json")
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := `
+workflow:
+  name: "Data Files JSON Random Test"
+  data:
+    products:
+      file: "` + jsonPath + `"
+      mode: random
+  steps:
+    - name: "get_product"
+      method: POST
+      url: "` + server.URL + `"
+      headers:
+        Content-Type: "application/json"
+      body: '{"product_id": ${data.products.id}, "product_name": "${data.products.name}"}'
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Load data sources
+	dataSources := make(data.Sources)
+	for name, dsCfg := range cfg.Workflow.Data {
+		src, err := data.LoadFile(name, dsCfg.File, data.Mode(dsCfg.Mode), "")
+		if err != nil {
+			t.Fatalf("failed to load data source %q: %v", name, err)
+		}
+		dataSources[name] = src
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config:      cfg.Workflow,
+		Client:      &http.Client{Timeout: 5 * time.Second},
+		DataSources: dataSources,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 50, // Enough iterations to see randomness
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Should have received 50 product IDs, all valid (1, 2, or 3)
+	if len(receivedIDs) != 50 {
+		t.Fatalf("expected 50 IDs, got %d", len(receivedIDs))
+	}
+
+	// Check all IDs are valid and we see multiple different values (randomness)
+	seen := make(map[float64]bool)
+	for _, id := range receivedIDs {
+		if id < 1 || id > 3 {
+			t.Errorf("invalid product ID: %v", id)
+		}
+		seen[id] = true
+	}
+
+	// With 50 iterations and 3 products, we should see at least 2 different products
+	if len(seen) < 2 {
+		t.Errorf("expected random mode to pick multiple products, only saw %d different IDs", len(seen))
 	}
 }
