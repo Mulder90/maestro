@@ -49,11 +49,12 @@ Maestro is a functional HTTP load testing tool with:
 
 ### 3. Request Dynamism
 
-**Current**: Static URLs, headers, and bodies.
+**Current**: Variable extraction and substitution with JSONPath support.
 
 **Needed**:
-- [ ] Variable extraction from responses (JSONPath, regex)
-- [ ] Variable substitution in requests (`${variable}`)
+- [x] Variable extraction from responses (JSONPath)
+- [x] Variable substitution in requests (`${variable}`)
+- [x] Environment variable support (`${env:VAR}`)
 - [ ] Data files (CSV, JSON) for parameterization
 - [ ] Built-in functions (random, uuid, timestamp)
 
@@ -199,10 +200,10 @@ Focus: Make HTTP testing production-ready
    - [x] JSON output format
    - [x] Exit codes based on thresholds
 
-2. **Basic dynamism** ❌ (not started)
-   - [ ] Variable extraction (JSONPath)
-   - [ ] Variable substitution in requests
-   - [ ] Environment variable support
+2. **Basic dynamism** ✅
+   - [x] Variable extraction (JSONPath via gjson)
+   - [x] Variable substitution in requests (`${var}`)
+   - [x] Environment variable support (`${env:VAR}`)
 
 3. **Operational** ✅
    - [x] Progress indicator

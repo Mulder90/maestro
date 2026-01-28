@@ -1197,3 +1197,410 @@ workflow:
 		t.Errorf("expected 2 requests, got %d", requestCount.Load())
 	}
 }
+
+func TestIntegration_VariableExtraction(t *testing.T) {
+	var mu sync.Mutex
+	var receivedBody string
+
+	// Server that returns JSON with an ID and echoes the POST body
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"id": "test-123", "user": {"name": "alice"}}`))
+			return
+		}
+		if r.URL.Path == "/echo" {
+			mu.Lock()
+			body, _ := io.ReadAll(r.Body)
+			receivedBody = string(body)
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Config that extracts from first request and uses in second
+	configContent := `
+workflow:
+  name: "Variable Extraction Test"
+  steps:
+    - name: "get_json"
+      method: GET
+      url: "` + server.URL + `/json"
+      extract:
+        request_id: "$.id"
+        user_name: "$.user.name"
+    - name: "echo_id"
+      method: POST
+      url: "` + server.URL + `/echo"
+      headers:
+        Content-Type: "application/json"
+      body: '{"extracted_id": "${request_id}", "name": "${user_name}"}'
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1, // Run once
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Verify extraction worked - the POST body should contain the extracted values
+	mu.Lock()
+	body := receivedBody
+	mu.Unlock()
+
+	if !strings.Contains(body, `"extracted_id": "test-123"`) {
+		t.Errorf("expected body to contain extracted_id, got: %s", body)
+	}
+	if !strings.Contains(body, `"name": "alice"`) {
+		t.Errorf("expected body to contain name, got: %s", body)
+	}
+
+	// Verify both steps were successful
+	events := c.Events()
+	if len(events) != 2 {
+		t.Errorf("expected 2 events, got %d", len(events))
+	}
+	for _, e := range events {
+		if !e.Success {
+			t.Errorf("expected step %q to succeed, got error: %s", e.Step, e.Error)
+		}
+	}
+}
+
+func TestIntegration_VariableSubstitution_InURL(t *testing.T) {
+	var mu sync.Mutex
+	var receivedPaths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedPaths = append(receivedPaths, r.URL.Path)
+		mu.Unlock()
+
+		if r.URL.Path == "/users" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"user_id": 42}`))
+			return
+		}
+		// Return success for /users/42
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "URL Substitution Test"
+  steps:
+    - name: "get_user_id"
+      method: GET
+      url: "` + server.URL + `/users"
+      extract:
+        user_id: "$.user_id"
+    - name: "get_user_profile"
+      method: GET
+      url: "` + server.URL + `/users/${user_id}"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	mu.Lock()
+	paths := receivedPaths
+	mu.Unlock()
+
+	// Should have hit /users and then /users/42
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(paths))
+	}
+	if paths[0] != "/users" {
+		t.Errorf("expected first path /users, got %s", paths[0])
+	}
+	if paths[1] != "/users/42" {
+		t.Errorf("expected second path /users/42, got %s", paths[1])
+	}
+}
+
+func TestIntegration_VariableSubstitution_InHeaders(t *testing.T) {
+	var mu sync.Mutex
+	var receivedAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"auth": {"token": "secret-bearer-token"}}`))
+			return
+		}
+		if r.URL.Path == "/protected" {
+			mu.Lock()
+			receivedAuth = r.Header.Get("Authorization")
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Header Substitution Test"
+  steps:
+    - name: "login"
+      method: POST
+      url: "` + server.URL + `/login"
+      extract:
+        token: "$.auth.token"
+    - name: "access_protected"
+      method: GET
+      url: "` + server.URL + `/protected"
+      headers:
+        Authorization: "Bearer ${token}"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	mu.Lock()
+	auth := receivedAuth
+	mu.Unlock()
+
+	if auth != "Bearer secret-bearer-token" {
+		t.Errorf("expected Authorization header 'Bearer secret-bearer-token', got %q", auth)
+	}
+}
+
+func TestIntegration_VariableSubstitution_EnvironmentVariable(t *testing.T) {
+	os.Setenv("TEST_API_PATH", "/api/test")
+	defer os.Unsetenv("TEST_API_PATH")
+
+	var mu sync.Mutex
+	var receivedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedPath = r.URL.Path
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Env Variable Test"
+  steps:
+    - name: "api_call"
+      method: GET
+      url: "` + server.URL + `${env:TEST_API_PATH}"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	mu.Lock()
+	path := receivedPath
+	mu.Unlock()
+
+	if path != "/api/test" {
+		t.Errorf("expected path /api/test from env var, got %s", path)
+	}
+}
+
+func TestIntegration_VariableSubstitution_MissingVariable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Missing Variable Test"
+  steps:
+    - name: "use_missing"
+      method: GET
+      url: "` + server.URL + `/users/${nonexistent_id}"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Should have failed due to missing variable
+	events := c.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Success {
+		t.Error("expected step to fail due to missing variable")
+	}
+	if !strings.Contains(events[0].Error, "nonexistent_id") {
+		t.Errorf("expected error to mention missing variable, got: %s", events[0].Error)
+	}
+}
+
+func TestIntegration_VariableExtraction_PathNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"different": "structure"}`))
+	}))
+	defer server.Close()
+
+	configContent := `
+workflow:
+  name: "Extraction Path Not Found Test"
+  steps:
+    - name: "extract_missing"
+      method: GET
+      url: "` + server.URL + `"
+      extract:
+        missing_field: "$.nonexistent.path"
+`
+	configPath := createTempConfigFile(t, configContent)
+	defer os.Remove(configPath)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	c := collector.NewCollector()
+	coord := coordinator.NewCoordinator(c)
+
+	workflow := &httpwf.Workflow{
+		Config: cfg.Workflow,
+		Client: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runnerConfig := core.RunnerConfig{
+		MaxIterations: 1,
+	}
+	coord.SpawnWithConfig(ctx, 1, workflow, runnerConfig)
+	coord.Wait()
+	c.Close()
+
+	// Should have failed due to extraction path not found
+	events := c.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Success {
+		t.Error("expected step to fail due to extraction path not found")
+	}
+	if !strings.Contains(events[0].Error, "not found") {
+		t.Errorf("expected error to mention 'not found', got: %s", events[0].Error)
+	}
+}

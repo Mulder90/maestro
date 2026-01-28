@@ -1,0 +1,23 @@
+# Authentication flow with token extraction
+# Demonstrates: extract, variable substitution in headers
+#
+# Run with: maestro --config=examples/variables/auth-flow.yaml --max-iterations=3
+
+workflow:
+  name: "Auth Flow"
+  steps:
+    - name: "login"
+      method: POST
+      url: "http://localhost:8080/auth/login"
+      headers:
+        Content-Type: "application/json"
+      body: '{"username": "test", "password": "secret"}'
+      extract:
+        token: "$.auth.token"
+        user_id: "$.user.id"
+
+    - name: "get_profile"
+      method: GET
+      url: "http://localhost:8080/users/${user_id}"
+      headers:
+        Authorization: "Bearer ${token}"

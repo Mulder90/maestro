@@ -1,0 +1,17 @@
+# Using environment variables for configuration
+# Demonstrates: ${env:VAR} syntax
+#
+# Run with:
+#   export API_BASE=http://localhost:8080
+#   export API_TOKEN=my-secret-token
+#   maestro --config=examples/variables/env-variables.yaml --max-iterations=3
+
+workflow:
+  name: "Environment Variables"
+  steps:
+    - name: "call_api"
+      method: GET
+      url: "${env:API_BASE}/json"
+      headers:
+        Authorization: "Bearer ${env:API_TOKEN}"
+        X-Custom-Header: "value"

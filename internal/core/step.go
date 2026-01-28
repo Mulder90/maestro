@@ -29,6 +29,8 @@ type Variables interface {
 }
 
 // MapVariables is a simple map-based Variables implementation.
+// MapVariables is NOT safe for concurrent use; each actor gets its own
+// instance per workflow run, so concurrent access is not expected.
 type MapVariables struct {
 	data map[string]any
 }

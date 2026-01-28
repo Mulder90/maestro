@@ -71,17 +71,24 @@ Response Times:
 workflow:
   name: "API Test"
   steps:
-    - name: "get_users"
-      method: GET
-      url: "https://api.example.com/users"
-
-    - name: "create_user"
+    - name: "login"
       method: POST
-      url: "https://api.example.com/users"
+      url: "${env:API_BASE}/auth/login"
       headers:
         Content-Type: "application/json"
-      body: '{"name": "test"}'
+      body: '{"user": "test", "pass": "secret"}'
+      extract:
+        token: "$.auth.token"
+
+    - name: "get_profile"
+      method: GET
+      url: "${env:API_BASE}/users/me"
+      headers:
+        Authorization: "Bearer ${token}"
 ```
+
+Variables use `${var}` syntax. Extract values from JSON responses with `$.path` (JSONPath).
+Environment variables use `${env:VAR}`.
 
 ### Thresholds (CI/CD)
 

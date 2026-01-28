@@ -1,0 +1,21 @@
+# Extract values and use them in subsequent requests
+# Demonstrates: extract from JSON, substitution in body
+#
+# Run with: maestro --config=examples/variables/extract-and-echo.yaml --max-iterations=3
+
+workflow:
+  name: "Extract and Echo"
+  steps:
+    - name: "get_json"
+      method: GET
+      url: "http://localhost:8080/json"
+      extract:
+        request_id: "$.id"
+        timestamp: "$.timestamp"
+
+    - name: "echo_extracted"
+      method: POST
+      url: "http://localhost:8080/echo"
+      headers:
+        Content-Type: "application/json"
+      body: '{"original_id": "${request_id}", "original_time": "${timestamp}"}'

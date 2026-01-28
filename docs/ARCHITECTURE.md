@@ -97,6 +97,7 @@ type Reporter interface {
 | **ComputeMetrics** | `internal/collector/compute.go` | Pure function for metrics calculation |
 | **FormatText/JSON** | `internal/collector/format.go` | Standalone output formatting functions |
 | **HTTPWorkflow** | `internal/http/workflow.go` | Execute HTTP request sequences |
+| **Template** | `internal/template/` | Variable substitution and JSONPath extraction |
 | **PhaseManager** | `internal/ratelimit/phase.go` | Track phases, calculate target actor count |
 | **RateLimiter** | `internal/ratelimit/limiter.go` | Token bucket rate limiting |
 | **Progress** | `internal/progress/progress.go` | Real-time progress display |
@@ -257,6 +258,9 @@ maestro/
 │   │   ├── workflow.go          # HTTP workflow execution
 │   │   ├── step.go              # HTTP step implementation
 │   │   └── debug.go             # Request/response debugging
+│   ├── template/
+│   │   ├── substitute.go        # Variable substitution (${var}, ${env:VAR})
+│   │   └── extract.go           # JSONPath extraction (gjson)
 │   ├── progress/
 │   │   └── progress.go          # Real-time progress display
 │   └── ratelimit/
@@ -299,10 +303,12 @@ workflow:
   steps:
     - name: string
       method: string        # GET, POST, PUT, DELETE, etc.
-      url: string
-      headers:              # optional
+      url: string           # supports ${var} and ${env:VAR}
+      headers:              # optional, supports ${var}
         Header-Name: value
-      body: string          # optional
+      body: string          # optional, supports ${var}
+      extract:              # optional, JSONPath extraction
+        var_name: "$.path.to.value"
 
 loadProfile:                # optional - enables profile mode
   phases:

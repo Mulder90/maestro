@@ -43,6 +43,8 @@ func (s *Server) registerHandlers() {
 	s.mux.HandleFunc("/fail-rate", s.handleFailRate)
 	s.mux.HandleFunc("/json", s.handleJSON)
 	s.mux.HandleFunc("/headers", s.handleHeaders)
+	s.mux.HandleFunc("/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/users/", s.handleUsers)
 }
 
 // handleHealth returns a simple health check response.
@@ -174,6 +176,56 @@ func (s *Server) handleHeaders(w http.ResponseWriter, r *http.Request) {
 		"headers": headers,
 		"method":  r.Method,
 		"path":    r.URL.Path,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleLogin simulates an authentication endpoint.
+// Returns a token that can be used in subsequent requests.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := s.requestID.Add(1)
+	token := fmt.Sprintf("token-%d-%d", id, time.Now().UnixNano())
+
+	response := map[string]interface{}{
+		"auth": map[string]interface{}{
+			"token":      token,
+			"expires_in": 3600,
+		},
+		"user": map[string]interface{}{
+			"id":   id,
+			"name": "testuser",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleUsers returns user data. Expects Authorization header.
+// Example: GET /users/123 or GET /users/me
+func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
+	auth := r.Header.Get("Authorization")
+
+	path := strings.TrimPrefix(r.URL.Path, "/users/")
+	userID := path
+	if userID == "" {
+		userID = "unknown"
+	}
+
+	response := map[string]interface{}{
+		"user_id":       userID,
+		"name":          "Test User",
+		"email":         "test@example.com",
+		"authenticated": auth != "",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

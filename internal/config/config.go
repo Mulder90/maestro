@@ -62,6 +62,7 @@ type StepConfig struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 	Body    string            `yaml:"body"`
+	Extract map[string]string `yaml:"extract,omitempty"` // JSONPath extraction rules
 }
 
 // LoadConfig reads and parses a YAML configuration file.
