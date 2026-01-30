@@ -306,3 +306,51 @@ func TestStep_3xxStatusCode(t *testing.T) {
 		t.Errorf("expected 301, got %d", result.StatusCode)
 	}
 }
+
+func TestStep_LargeBodyExtraction(t *testing.T) {
+	// Create a response body larger than maxDebugBodySize (4KB) but within maxExtractBodySize (10MB)
+	// to verify extraction works with large responses
+	largeData := make([]byte, 8192) // 8KB - larger than debug limit
+	for i := range largeData {
+		largeData[i] = 'x'
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// JSON with data field at the end (beyond 4KB mark)
+		w.Write([]byte(`{"padding": "`))
+		w.Write(largeData)
+		w.Write([]byte(`", "target": "extracted_value"}`))
+	}))
+	defer server.Close()
+
+	step := NewStep(
+		config.StepConfig{
+			Name:   "test",
+			Method: "GET",
+			URL:    server.URL,
+			Extract: map[string]string{
+				"result": "$.target",
+			},
+		},
+		&http.Client{Timeout: 5 * time.Second},
+		nil,
+	)
+
+	ctx := core.ContextWithActorID(context.Background(), 1)
+	result, err := step.Execute(ctx, core.NewVariables())
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success, got error: %s", result.Error)
+	}
+	if result.Extract == nil {
+		t.Fatal("expected extracted values")
+	}
+	if result.Extract["result"] != "extracted_value" {
+		t.Errorf("expected 'extracted_value', got %v", result.Extract["result"])
+	}
+}

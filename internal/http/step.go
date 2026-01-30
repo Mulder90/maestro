@@ -12,7 +12,13 @@ import (
 	"maestro/internal/template"
 )
 
-const maxDebugBodySize = 4096
+const (
+	// maxDebugBodySize limits response body logged in verbose mode.
+	maxDebugBodySize = 4096
+	// maxExtractBodySize limits response body read for variable extraction.
+	// Larger than debug to support extracting from bigger JSON responses.
+	maxExtractBodySize = 10 * 1024 * 1024 // 10MB
+)
 
 type Step struct {
 	config config.StepConfig
@@ -103,11 +109,17 @@ func (s *Step) Execute(ctx context.Context, vars core.Variables) (core.Result, e
 	defer resp.Body.Close()
 
 	// Read body if needed for debug OR extraction
-	needsBody := s.debug != nil || len(s.config.Extract) > 0
+	needsExtract := len(s.config.Extract) > 0
+	needsDebug := s.debug != nil
 	var respBody []byte
-	if needsBody {
-		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, maxDebugBodySize))
-		_, _ = io.Copy(io.Discard, resp.Body) // drain errors are ignorable
+	if needsExtract || needsDebug {
+		// Use larger limit when extraction is needed
+		limit := int64(maxDebugBodySize)
+		if needsExtract {
+			limit = maxExtractBodySize
+		}
+		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, limit))
+		_, _ = io.Copy(io.Discard, resp.Body) // drain remaining body
 	} else {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain errors are ignorable
 	}
@@ -118,7 +130,12 @@ func (s *Step) Execute(ctx context.Context, vars core.Variables) (core.Result, e
 		errStr = resp.Status
 	}
 
-	s.debug.LogResponse(actorID, s.config.Name, resp, respBody, duration)
+	// For debug logging, truncate body if needed
+	debugBody := respBody
+	if len(debugBody) > maxDebugBodySize {
+		debugBody = debugBody[:maxDebugBodySize]
+	}
+	s.debug.LogResponse(actorID, s.config.Name, resp, debugBody, duration)
 
 	// Extract variables from response (if extract rules defined and request succeeded)
 	var extracted map[string]any

@@ -233,3 +233,26 @@ func TestConcurrentAccess(t *testing.T) {
 		<-done
 	}
 }
+
+func TestNextReturnsCopy(t *testing.T) {
+	// Verify that Next() returns a copy, not a reference to internal data
+	src := NewSource("test", []map[string]any{
+		{"key": "original"},
+	}, ModeSequential)
+
+	// Get the first row and mutate it
+	row1 := src.Next()
+	row1["key"] = "mutated"
+	row1["new_key"] = "added"
+
+	// Get the same row again (wraps around)
+	row2 := src.Next()
+
+	// Original data should be unchanged
+	if row2["key"] != "original" {
+		t.Errorf("mutation affected original data: got %v, want 'original'", row2["key"])
+	}
+	if _, exists := row2["new_key"]; exists {
+		t.Error("added key should not exist in original data")
+	}
+}

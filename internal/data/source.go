@@ -2,6 +2,8 @@
 package data
 
 import (
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -42,8 +44,18 @@ func NewSource(name string, rows []map[string]any, mode Mode) *Source {
 		name: name,
 		rows: rows,
 		mode: mode,
-		rng:  rand.New(rand.NewSource(rand.Int63())),
+		rng:  rand.New(rand.NewSource(cryptoSeed())),
 	}
+}
+
+// cryptoSeed generates a cryptographically secure seed for math/rand.
+func cryptoSeed() int64 {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		// Fallback to time-based seed if crypto/rand fails (shouldn't happen)
+		return rand.Int63()
+	}
+	return int64(binary.LittleEndian.Uint64(b[:]))
 }
 
 // Name returns the source name.
@@ -56,8 +68,9 @@ func (s *Source) Len() int {
 	return len(s.rows)
 }
 
-// Next returns the next row based on the iteration mode.
+// Next returns a copy of the next row based on the iteration mode.
 // Thread-safe for concurrent access by multiple actors.
+// Returns a shallow copy to prevent callers from mutating shared data.
 func (s *Source) Next() map[string]any {
 	if len(s.rows) == 0 {
 		return nil
@@ -74,7 +87,13 @@ func (s *Source) Next() map[string]any {
 		idx = int(n % uint64(len(s.rows)))
 	}
 
-	return s.rows[idx]
+	// Return a copy to prevent mutation of shared data
+	original := s.rows[idx]
+	row := make(map[string]any, len(original))
+	for k, v := range original {
+		row[k] = v
+	}
+	return row
 }
 
 // LoadFile loads a data file (CSV or JSON) and returns a Source.
